@@ -116,37 +116,6 @@ fn root_tag(xml: &str) -> &str {
     &rest[..end]
 }
 
-// ── Field Day exchange parsing ───────────────────────────────────────────────
-
-/// Parse the received Field Day exchange.
-///
-/// N1MM typically puts the full received exchange ("4A MDC") in `<exchangel>`
-/// and just the section in `<section>`.  We extract class + section from
-/// whichever field has both tokens; otherwise fall back gracefully.
-fn parse_fd_exchange(section_field: &str, exchangel: &str) -> (String, String) {
-    // Prefer exchangel if it looks like "CLASS SECTION" (two tokens)
-    let parts: Vec<&str> = exchangel.split_whitespace().collect();
-    if parts.len() >= 2 {
-        let cls  = parts[0].to_uppercase();
-        let sect = parts[parts.len() - 1].to_uppercase();
-        if is_valid_class(&cls) {
-            return (cls, sect);
-        }
-    }
-    // Fall back: section from <section> field, class unknown
-    ("".to_string(), section_field.trim().to_uppercase())
-}
-
-fn is_valid_class(s: &str) -> bool {
-    let pos = s.chars().position(|c| c.is_alphabetic());
-    match pos {
-        None => false,
-        Some(p) => {
-            s[..p].parse::<u32>().is_ok()
-                && ["A", "B", "C", "D", "E", "F"].contains(&&s[p..])
-        }
-    }
-}
 
 fn is_valid_section(s: &str) -> bool {
     VALID_ABBREVS.contains(&s)
@@ -159,8 +128,7 @@ pub fn build_contactinfo(c: &Contact, cfg: &SiteConfig, id: &str) -> String {
     let band = band_to_mhz(&c.band);
     let mode = mode_to_n1mm(&c.mode);
     let sent = format!("{} {}", cfg.class, cfg.section);
-    let rcvd = format!("{} {}", c.class, c.section);
-    xml_envelope("contactinfo", c, cfg, id, &ts, band, mode, &sent, &rcvd)
+    xml_envelope("contactinfo", c, cfg, id, &ts, band, mode, &sent)
 }
 
 pub fn build_contactreplace(c: &Contact, cfg: &SiteConfig, id: &str) -> String {
@@ -168,8 +136,7 @@ pub fn build_contactreplace(c: &Contact, cfg: &SiteConfig, id: &str) -> String {
     let band = band_to_mhz(&c.band);
     let mode = mode_to_n1mm(&c.mode);
     let sent = format!("{} {}", cfg.class, cfg.section);
-    let rcvd = format!("{} {}", c.class, c.section);
-    xml_envelope("contactreplace", c, cfg, id, &ts, band, mode, &sent, &rcvd)
+    xml_envelope("contactreplace", c, cfg, id, &ts, band, mode, &sent)
 }
 
 pub fn build_contactdelete(c: &Contact, cfg: &SiteConfig) -> String {
@@ -204,13 +171,12 @@ fn xml_envelope(
     band: &str,
     mode: &str,
     sent: &str,
-    rcvd: &str,
 ) -> String {
     format!(
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
          <{root}>\n\
          <app>FDLogger</app>\n\
-         <contestname>ARRL-FIELD-DAY</contestname>\n\
+         <contestname>FD</contestname>\n\
          <contestnr>1</contestnr>\n\
          <timestamp>{ts}</timestamp>\n\
          <mycall>{mycall}</mycall>\n\
@@ -220,8 +186,8 @@ fn xml_envelope(
          <operator>{operator}</operator>\n\
          <mode>{mode}</mode>\n\
          <call>{call}</call>\n\
+         <exchange1>{class}</exchange1>\n\
          <section>{section}</section>\n\
-         <exchangel>{rcvd}</exchangel>\n\
          <SentExchange>{sent}</SentExchange>\n\
          <StationName>FDLogger</StationName>\n\
          <ID>{id}</ID>\n\
@@ -235,8 +201,8 @@ fn xml_envelope(
         operator = c.operator,
         mode     = mode,
         call     = c.call,
+        class    = c.class,
         section  = c.section,
-        rcvd     = rcvd,
         sent     = sent,
         id       = id,
     )
@@ -307,13 +273,13 @@ pub async fn run_listener(db_path: String) {
 // ── Incoming message handlers ────────────────────────────────────────────────
 
 fn handle_contactinfo(xml: &str, db_path: &str) {
-    let n1mm_id  = xml_field(xml, "ID");
-    let call     = xml_field(xml, "call").to_uppercase();
-    let band_mhz = xml_field(xml, "band");
-    let mode_raw = xml_field(xml, "mode");
-    let section  = xml_field(xml, "section");
-    let exchangel = xml_field(xml, "exchangel");
-    let operator = xml_field(xml, "operator").to_uppercase();
+    let n1mm_id   = xml_field(xml, "ID");
+    let call      = xml_field(xml, "call").to_uppercase();
+    let band_mhz  = xml_field(xml, "band");
+    let mode_raw  = xml_field(xml, "mode");
+    let section   = xml_field(xml, "section").trim().to_uppercase();
+    let class     = xml_field(xml, "exchange1").trim().to_uppercase();
+    let operator  = xml_field(xml, "operator").to_uppercase();
     let timestamp = xml_field(xml, "timestamp");
 
     if call.is_empty() {
@@ -322,10 +288,9 @@ fn handle_contactinfo(xml: &str, db_path: &str) {
 
     let band = mhz_to_band(&band_mhz).to_string();
     let mode = n1mm_to_mode(&mode_raw).to_string();
-    let (class, sect) = parse_fd_exchange(&section, &exchangel);
 
     // Validate section — fall back to DX for foreign stations
-    let sect = if is_valid_section(&sect) { sect } else { "DX".to_string() };
+    let sect = if is_valid_section(&section) { section } else { "DX".to_string() };
 
     let (date, time) = split_timestamp(&timestamp);
 
@@ -354,13 +319,13 @@ fn handle_contactinfo(xml: &str, db_path: &str) {
 }
 
 fn handle_contactreplace(xml: &str, db_path: &str) {
-    let n1mm_id   = xml_field(xml, "ID");
-    let call      = xml_field(xml, "call").to_uppercase();
-    let band_mhz  = xml_field(xml, "band");
-    let mode_raw  = xml_field(xml, "mode");
-    let section   = xml_field(xml, "section");
-    let exchangel = xml_field(xml, "exchangel");
-    let operator  = xml_field(xml, "operator").to_uppercase();
+    let n1mm_id  = xml_field(xml, "ID");
+    let call     = xml_field(xml, "call").to_uppercase();
+    let band_mhz = xml_field(xml, "band");
+    let mode_raw = xml_field(xml, "mode");
+    let section  = xml_field(xml, "section").trim().to_uppercase();
+    let class    = xml_field(xml, "exchange1").trim().to_uppercase();
+    let operator = xml_field(xml, "operator").to_uppercase();
 
     if call.is_empty() || n1mm_id.is_empty() {
         return;
@@ -368,8 +333,7 @@ fn handle_contactreplace(xml: &str, db_path: &str) {
 
     let band = mhz_to_band(&band_mhz).to_string();
     let mode = n1mm_to_mode(&mode_raw).to_string();
-    let (class, sect) = parse_fd_exchange(&section, &exchangel);
-    let sect = if is_valid_section(&sect) { sect } else { "DX".to_string() };
+    let sect = if is_valid_section(&section) { section } else { "DX".to_string() };
 
     let contact = NewContact { call: call.clone(), band, mode, class, section: sect, operator };
 
