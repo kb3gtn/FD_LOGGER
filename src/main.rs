@@ -25,11 +25,6 @@ use models::{ApiResponse, Contact, NewContact, SiteConfig};
 
 pub struct DbState(Mutex<Connection>);
 
-pub struct N1mmBroadcast {
-    pub addr: String,
-    pub port: u16,
-}
-
 // ── ADIF download responder ───────────────────────────────────────────────────
 
 pub struct AdifDownload(Vec<u8>);
@@ -51,7 +46,6 @@ impl<'r, 'o: 'r> Responder<'r, 'o> for AdifDownload {
 
 struct N1mmFairing {
     db_path: String,
-    listen_port: u16,
 }
 
 #[rocket::async_trait]
@@ -61,8 +55,7 @@ impl Fairing for N1mmFairing {
     }
     async fn on_liftoff(&self, _rocket: &Rocket<Orbit>) {
         let db_path = self.db_path.clone();
-        let port = self.listen_port;
-        rocket::tokio::spawn(n1mm::run_listener(db_path, port));
+        rocket::tokio::spawn(n1mm::run_listener(db_path, n1mm::PORT));
     }
 }
 
@@ -183,7 +176,6 @@ fn logger(db: &State<DbState>, page: Option<i64>) -> Result<Template, Redirect> 
 #[post("/api/contacts", data = "<body>")]
 fn api_add_contact(
     db: &State<DbState>,
-    bcast: &State<N1mmBroadcast>,
     body: Json<NewContact>,
 ) -> Json<ApiResponse<Contact>> {
     if let Err(e) = validate_contact(&body) {
@@ -191,18 +183,8 @@ fn api_add_contact(
     }
     let id = n1mm::new_id();
     let conn = db.0.lock().unwrap();
-    let result = db::add_contact(&conn, &body, Some(&id));
-    let config = db::get_site_config(&conn).ok().flatten();
-    drop(conn);
-
-    match result {
-        Ok(c) => {
-            if let Some(cfg) = config {
-                let xml = n1mm::build_contactinfo(&c, &cfg, &id);
-                n1mm::broadcast(&xml, &bcast.addr, bcast.port);
-            }
-            Json(ApiResponse::ok(c))
-        }
+    match db::add_contact(&conn, &body, Some(&id)) {
+        Ok(c)  => Json(ApiResponse::ok(c)),
         Err(e) => Json(ApiResponse::err(e.to_string())),
     }
 }
@@ -210,7 +192,6 @@ fn api_add_contact(
 #[put("/api/contacts/<id>", data = "<body>")]
 fn api_update_contact(
     db: &State<DbState>,
-    bcast: &State<N1mmBroadcast>,
     id: i64,
     body: Json<NewContact>,
 ) -> Json<ApiResponse<Contact>> {
@@ -218,50 +199,26 @@ fn api_update_contact(
         return Json(ApiResponse::err(e));
     }
     let conn = db.0.lock().unwrap();
-    let old = db::get_contact(&conn, id).ok().flatten();
-    let config = db::get_site_config(&conn).ok().flatten();
     match db::update_contact(&conn, id, &body) {
         Ok(true) => match db::get_contact(&conn, id) {
-            Ok(Some(updated)) => {
-                drop(conn);
-                if let Some(cfg) = config {
-                    // N1MM protocol: send delete for old record, then replace for new
-                    if let Some(ref old_c) = old {
-                        n1mm::broadcast(&n1mm::build_contactdelete(old_c, &cfg), &bcast.addr, bcast.port);
-                    }
-                    let n1mm_id = updated.n1mm_id.clone().unwrap_or_else(n1mm::new_id);
-                    n1mm::broadcast(&n1mm::build_contactreplace(&updated, &cfg, &n1mm_id), &bcast.addr, bcast.port);
-                }
-                Json(ApiResponse::ok(updated))
-            }
+            Ok(Some(updated)) => Json(ApiResponse::ok(updated)),
             _ => Json(ApiResponse::err("Contact not found after update")),
         },
         Ok(false) => Json(ApiResponse::err("Contact not found")),
-        Err(e) => Json(ApiResponse::err(e.to_string())),
+        Err(e)    => Json(ApiResponse::err(e.to_string())),
     }
 }
 
 #[delete("/api/contacts/<id>")]
 fn api_delete_contact(
     db: &State<DbState>,
-    bcast: &State<N1mmBroadcast>,
     id: i64,
 ) -> Json<ApiResponse<()>> {
     let conn = db.0.lock().unwrap();
-    let contact = db::get_contact(&conn, id).ok().flatten();
-    let config = db::get_site_config(&conn).ok().flatten();
-    let result = db::delete_contact(&conn, id);
-    drop(conn);
-
-    match result {
-        Ok(true) => {
-            if let (Some(c), Some(cfg)) = (contact, config) {
-                n1mm::broadcast(&n1mm::build_contactdelete(&c, &cfg), &bcast.addr, bcast.port);
-            }
-            Json(ApiResponse::ok(()))
-        }
+    match db::delete_contact(&conn, id) {
+        Ok(true)  => Json(ApiResponse::ok(())),
         Ok(false) => Json(ApiResponse::err("Contact not found")),
-        Err(e) => Json(ApiResponse::err(e.to_string())),
+        Err(e)    => Json(ApiResponse::err(e.to_string())),
     }
 }
 
@@ -398,29 +355,11 @@ fn rocket() -> _ {
     db::init_db(&conn)
         .unwrap_or_else(|e| panic!("Failed to initialize database: {}", e));
 
-    // Parse --n1mm-addr and --n1mm-port from CLI args; fall back to env/defaults.
-    let mut bcast_addr = std::env::var("N1MM_BROADCAST")
-        .unwrap_or_else(|_| "255.255.255.255".to_string());
-    let mut bcast_port = n1mm::PORT;
-    let mut args = std::env::args().skip(1);
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--n1mm-addr" => { if let Some(v) = args.next() { bcast_addr = v; } }
-            "--n1mm-port" => {
-                if let Some(v) = args.next() {
-                    if let Ok(p) = v.parse::<u16>() { bcast_port = p; }
-                }
-            }
-            _ => {}
-        }
-    }
-
     println!("FD Logger starting on http://0.0.0.0:8000");
-    println!("N1MM broadcast target: {}:{}", bcast_addr, bcast_port);
+    println!("N1MM listener active on UDP :{}", n1mm::PORT);
 
     rocket::build()
         .manage(DbState(Mutex::new(conn)))
-        .manage(N1mmBroadcast { addr: bcast_addr, port: bcast_port })
         .mount(
             "/",
             routes![
@@ -439,5 +378,5 @@ fn rocket() -> _ {
             ],
         )
         .attach(Template::fairing())
-        .attach(N1mmFairing { db_path: db_path.to_string(), listen_port: n1mm::PORT })
+        .attach(N1mmFairing { db_path: db_path.to_string() })
 }
