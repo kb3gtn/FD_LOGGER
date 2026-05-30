@@ -389,9 +389,9 @@ nav.pagination { display: flex; gap: 0.35rem; margin-top: 0.75rem; flex-wrap: wr
             aria-label="Switch to light theme"
             onclick="toggleTheme()">🌙</button>
     <a href="/export/adif" class="btn btn-export"
-       aria-label="Export log as ADIF file download">⬇ Export ADIF</a>
+       aria-label="Export log as ADIF file download">⬅ Export ADIF</a>
     <label for="adif-file-input" class="btn btn-import"
-           aria-label="Import contacts from ADIF file">⬆ Import ADIF</label>
+           aria-label="Import contacts from ADIF file">➡ Import ADIF</label>
     <input type="file" id="adif-file-input"
            accept=".adi,.adif,text/plain"
            style="position:absolute;left:-9999px;width:1px;height:1px"
@@ -1321,7 +1321,7 @@ async function handleAdifImport(input) {
     } catch (err) {
       showStatus('Import error: ' + err, 'error');
     } finally {
-      label.textContent = '⬆ Import ADIF';
+      label.textContent = '➡ Import ADIF';
     }
   };
   reader.readAsText(file);
