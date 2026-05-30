@@ -68,7 +68,7 @@
 
 /* ── Reset ────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html { zoom: 1.5; }
+html { zoom: 1.25; }
 body {
   font-family: 'Segoe UI', system-ui, sans-serif;
   background: var(--bg);
@@ -942,12 +942,14 @@ document.addEventListener('keydown', function (e) {
   }
   if (e.key === 'F4') {
     e.preventDefault();
-    const firstRow = document.querySelector('#contact-tbody tr[id^="contact-"]');
-    if (firstRow) {
-      openEdit(firstRow);
-      announce('Editing last contact: ' + firstRow.dataset.call, false);
+    const row = lastLocalId
+      ? document.getElementById('contact-' + lastLocalId)
+      : document.querySelector('#contact-tbody tr[id^="contact-"]');
+    if (row) {
+      openEdit(row);
+      announce('Editing last contact: ' + row.dataset.call, false);
     } else {
-      announce('No contacts in log to edit', false);
+      announce('No contacts logged by this station yet', false);
     }
     return;
   }
@@ -1062,38 +1064,16 @@ function clearForm() {
 }
 
 // ── Prepend row to table ──────────────────────────────────────
+let lastLocalId = 0;   // ID of the last contact logged by this client
+
 function prependRow(c) {
   const tbody = document.getElementById('contact-tbody');
   const empty = document.getElementById('empty-row');
   if (empty) empty.remove();
   if (tbody.children.length >= 25) tbody.removeChild(tbody.lastChild);
-
-  const tr = document.createElement('tr');
-  tr.id = 'contact-' + c.id;
-  tr.dataset.id       = c.id;
-  tr.dataset.call     = c.call;
-  tr.dataset.band     = c.band;
-  tr.dataset.mode     = c.mode;
-  tr.dataset.cls      = c.class;
-  tr.dataset.section  = c.section;
-  tr.dataset.operator = c.operator;
-  tr.innerHTML =
-    '<td>' + c.id + '</td>' +
-    '<td>' + c.date + '</td>' +
-    '<td>' + c.time + '</td>' +
-    '<td class="call">' + c.call + '</td>' +
-    '<td>' + c.band + '</td>' +
-    '<td>' + c.mode + '</td>' +
-    '<td>' + c.class + '</td>' +
-    '<td>' + c.section + '</td>' +
-    '<td>' + c.operator + '</td>' +
-    '<td class="actions">' +
-      '<button class="btn-edit" aria-label="Edit contact ' + c.call + '" ' +
-              'onclick="openEdit(this.closest(\'tr\'))">Edit</button> ' +
-      '<button class="btn-del" aria-label="Delete contact ' + c.call + '" ' +
-              'onclick="delContact(this.closest(\'tr\'))">Del</button>' +
-    '</td>';
-  tbody.insertBefore(tr, tbody.firstChild);
+  tbody.insertBefore(buildRow(c), tbody.firstChild);
+  lastLocalId = c.id;  // track this client's last logged contact
+  if (c.id > maxKnownId) maxKnownId = c.id;
 }
 
 function markWorked(section) {
@@ -1326,6 +1306,72 @@ async function handleAdifImport(input) {
   };
   reader.readAsText(file);
 }
+
+// ── Polling sync (5-second interval) ──────────────────────────
+// Tracks the highest contact ID currently shown in the table.
+// On each tick, fetches contacts logged since that ID by other clients.
+let maxKnownId = (function () {
+  const first = document.querySelector('#contact-tbody tr[id^="contact-"]');
+  return first ? parseInt(first.dataset.id) : 0;
+})();
+
+async function pollForNewContacts() {
+  let contacts;
+  try {
+    const resp = await fetch('/api/contacts/since/' + maxKnownId);
+    contacts = await resp.json();
+  } catch (_) { return; }
+
+  if (!contacts.length) return;
+
+  const tbody = document.getElementById('contact-tbody');
+  const empty = document.getElementById('empty-row');
+  if (empty) empty.remove();
+
+  // Contacts arrive oldest-first; prepend in reverse so newest ends up on top
+  contacts.slice().reverse().forEach(function (c) {
+    if (document.getElementById('contact-' + c.id)) return; // already present
+    if (tbody.children.length >= 25) tbody.removeChild(tbody.lastChild);
+    tbody.insertBefore(buildRow(c), tbody.firstChild);
+    markWorked(c.section);
+    incrementCount();
+  });
+
+  // Update maxKnownId to the highest id we just received
+  maxKnownId = contacts[contacts.length - 1].id;
+  refreshSections();
+}
+
+function buildRow(c) {
+  const tr = document.createElement('tr');
+  tr.id = 'contact-' + c.id;
+  tr.dataset.id       = c.id;
+  tr.dataset.call     = c.call;
+  tr.dataset.band     = c.band;
+  tr.dataset.mode     = c.mode;
+  tr.dataset.cls      = c.class;
+  tr.dataset.section  = c.section;
+  tr.dataset.operator = c.operator;
+  tr.innerHTML =
+    '<td>' + c.id + '</td>' +
+    '<td>' + c.date + '</td>' +
+    '<td>' + c.time + '</td>' +
+    '<td class="call">' + c.call + '</td>' +
+    '<td>' + c.band + '</td>' +
+    '<td>' + c.mode + '</td>' +
+    '<td>' + c.class + '</td>' +
+    '<td>' + c.section + '</td>' +
+    '<td>' + c.operator + '</td>' +
+    '<td class="actions">' +
+      '<button class="btn-edit" aria-label="Edit contact ' + c.call + '" ' +
+              'onclick="openEdit(this.closest(\'tr\'))">Edit</button> ' +
+      '<button class="btn-del" aria-label="Delete contact ' + c.call + '" ' +
+              'onclick="delContact(this.closest(\'tr\'))">Del</button>' +
+    '</td>';
+  return tr;
+}
+
+setInterval(pollForNewContacts, 5000);
 
 // ── Visual status (sighted users) ─────────────────────────────
 let statusTimer;

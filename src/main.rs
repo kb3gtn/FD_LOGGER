@@ -264,6 +264,12 @@ fn api_delete_contact(
     }
 }
 
+#[get("/api/contacts/since/<since_id>")]
+fn api_contacts_since(db: &State<DbState>, since_id: i64) -> Json<Vec<Contact>> {
+    let conn = db.0.lock().unwrap();
+    Json(db::get_contacts_since(&conn, since_id).unwrap_or_default())
+}
+
 #[get("/api/dupe?<call>&<band>&<mode>")]
 fn api_dupe_check(
     db: &State<DbState>,
@@ -410,6 +416,7 @@ fn rocket() -> _ {
                 api_add_contact,
                 api_update_contact,
                 api_delete_contact,
+                api_contacts_since,
                 api_dupe_check,
                 api_sections,
                 import_adif,

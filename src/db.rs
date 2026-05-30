@@ -208,6 +208,19 @@ pub fn delete_contact(conn: &Connection, id: i64) -> Result<bool> {
     Ok(rows > 0)
 }
 
+/// Returns all contacts with id > since_id, oldest first.
+/// Used by the polling sync endpoint.
+pub fn get_contacts_since(conn: &Connection, since_id: i64) -> Result<Vec<Contact>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, date, time, call, band, mode, class, section, operator, n1mm_id
+         FROM contacts WHERE id > ?1 ORDER BY id ASC",
+    )?;
+    let contacts = stmt
+        .query_map(params![since_id], row_to_contact)?
+        .collect::<Result<Vec<_>>>()?;
+    Ok(contacts)
+}
+
 /// Returns true if (call, band, mode) is already in the log.
 /// Field Day scoring treats this triple as the uniqueness key.
 pub fn is_dupe(conn: &Connection, call: &str, band: &str, mode: &str) -> bool {
