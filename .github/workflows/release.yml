@@ -85,45 +85,8 @@ jobs:
           name: fd_logger-windows-x86_64
           path: fd_logger-windows-x86_64.zip
 
-  # ── macOS x86-64 ─────────────────────────────────────────────────────────────
-  build-macos-x86:
-    name: Build – macOS x86-64
-    runs-on: macos-13        # last Intel runner
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo registry
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: macos-x86_64-${{ hashFiles('Cargo.lock') }}
-
-      - name: Build
-        run: cargo build --release
-
-      - name: Package
-        run: |
-          mkdir -p dist/fd_logger
-          cp target/release/fd_logger dist/fd_logger/
-          cp -r templates              dist/fd_logger/
-          cp Rocket.toml               dist/fd_logger/
-          cp README.md                 dist/fd_logger/
-          cp LICENSE                   dist/fd_logger/
-          cd dist
-          tar -czf ../fd_logger-macos-x86_64.tar.gz fd_logger
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: fd_logger-macos-x86_64
-          path: fd_logger-macos-x86_64.tar.gz
-
   # ── macOS ARM64 (Apple Silicon) ───────────────────────────────────────────────
+  # Intel Mac users can run the ARM64 binary via Rosetta 2.
   build-macos-arm:
     name: Build – macOS ARM64
     runs-on: macos-latest    # M-series runner
@@ -164,7 +127,7 @@ jobs:
   # ── GitHub Release ────────────────────────────────────────────────────────────
   release:
     name: Publish GitHub Release
-    needs: [build-linux, build-windows, build-macos-x86, build-macos-arm]
+    needs: [build-linux, build-windows, build-macos-arm]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -189,8 +152,7 @@ jobs:
             |----------|------|
             | Linux x86-64 | `fd_logger-linux-x86_64.tar.gz` |
             | Windows x86-64 | `fd_logger-windows-x86_64.zip` |
-            | macOS x86-64 (Intel) | `fd_logger-macos-x86_64.tar.gz` |
-            | macOS ARM64 (Apple Silicon) | `fd_logger-macos-arm64.tar.gz` |
+            | macOS ARM64 (Apple Silicon / Intel via Rosetta 2) | `fd_logger-macos-arm64.tar.gz` |
 
             ### Quick start
 
@@ -202,7 +164,6 @@ jobs:
           files: |
             artifacts/fd_logger-linux-x86_64/fd_logger-linux-x86_64.tar.gz
             artifacts/fd_logger-windows-x86_64/fd_logger-windows-x86_64.zip
-            artifacts/fd_logger-macos-x86_64/fd_logger-macos-x86_64.tar.gz
             artifacts/fd_logger-macos-arm64/fd_logger-macos-arm64.tar.gz
           draft: false
           prerelease: false
