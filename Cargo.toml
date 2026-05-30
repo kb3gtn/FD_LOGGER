@@ -2,6 +2,9 @@
 name = "fd_logger"
 version = "0.1.0"
 edition = "2021"
+license = "GPL-3.0-only"
+description = "Web-based ARRL Field Day contact logger with N1MM+ integration"
+repository = "https://github.com/kb3gtn/FD_LOGGER"
 
 [[bin]]
 name = "fd_logger"
