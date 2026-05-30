@@ -1,0 +1,208 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  # ── Linux x86-64 ─────────────────────────────────────────────────────────────
+  build-linux:
+    name: Build – Linux x86-64
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: linux-x86_64-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Package
+        run: |
+          mkdir -p dist/fd_logger
+          cp target/release/fd_logger dist/fd_logger/
+          cp -r templates              dist/fd_logger/
+          cp Rocket.toml               dist/fd_logger/
+          cp README.md                 dist/fd_logger/
+          cp LICENSE                   dist/fd_logger/
+          cd dist
+          tar -czf ../fd_logger-linux-x86_64.tar.gz fd_logger
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fd_logger-linux-x86_64
+          path: fd_logger-linux-x86_64.tar.gz
+
+  # ── Windows x86-64 ───────────────────────────────────────────────────────────
+  build-windows:
+    name: Build – Windows x86-64
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: windows-x86_64-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist\fd_logger | Out-Null
+          Copy-Item target\release\fd_logger.exe dist\fd_logger\
+          Copy-Item -Recurse templates            dist\fd_logger\templates
+          Copy-Item Rocket.toml                  dist\fd_logger\
+          Copy-Item README.md                    dist\fd_logger\
+          Copy-Item LICENSE                      dist\fd_logger\
+          Compress-Archive -Path dist\fd_logger -DestinationPath fd_logger-windows-x86_64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fd_logger-windows-x86_64
+          path: fd_logger-windows-x86_64.zip
+
+  # ── macOS x86-64 ─────────────────────────────────────────────────────────────
+  build-macos-x86:
+    name: Build – macOS x86-64
+    runs-on: macos-13        # last Intel runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: macos-x86_64-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Package
+        run: |
+          mkdir -p dist/fd_logger
+          cp target/release/fd_logger dist/fd_logger/
+          cp -r templates              dist/fd_logger/
+          cp Rocket.toml               dist/fd_logger/
+          cp README.md                 dist/fd_logger/
+          cp LICENSE                   dist/fd_logger/
+          cd dist
+          tar -czf ../fd_logger-macos-x86_64.tar.gz fd_logger
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fd_logger-macos-x86_64
+          path: fd_logger-macos-x86_64.tar.gz
+
+  # ── macOS ARM64 (Apple Silicon) ───────────────────────────────────────────────
+  build-macos-arm:
+    name: Build – macOS ARM64
+    runs-on: macos-latest    # M-series runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: macos-arm64-${{ hashFiles('Cargo.lock') }}
+
+      - name: Build
+        run: cargo build --release
+
+      - name: Package
+        run: |
+          mkdir -p dist/fd_logger
+          cp target/release/fd_logger dist/fd_logger/
+          cp -r templates              dist/fd_logger/
+          cp Rocket.toml               dist/fd_logger/
+          cp README.md                 dist/fd_logger/
+          cp LICENSE                   dist/fd_logger/
+          cd dist
+          tar -czf ../fd_logger-macos-arm64.tar.gz fd_logger
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fd_logger-macos-arm64
+          path: fd_logger-macos-arm64.tar.gz
+
+  # ── GitHub Release ────────────────────────────────────────────────────────────
+  release:
+    name: Publish GitHub Release
+    needs: [build-linux, build-windows, build-macos-x86, build-macos-arm]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: FD Logger ${{ github.ref_name }}
+          body: |
+            ## FD Logger ${{ github.ref_name }}
+
+            Web-based ARRL Field Day contact logger.
+
+            ### Downloads
+
+            | Platform | File |
+            |----------|------|
+            | Linux x86-64 | `fd_logger-linux-x86_64.tar.gz` |
+            | Windows x86-64 | `fd_logger-windows-x86_64.zip` |
+            | macOS x86-64 (Intel) | `fd_logger-macos-x86_64.tar.gz` |
+            | macOS ARM64 (Apple Silicon) | `fd_logger-macos-arm64.tar.gz` |
+
+            ### Quick start
+
+            1. Extract the archive
+            2. Run `./fd_logger` (Linux/macOS) or `fd_logger.exe` (Windows) from the extracted directory
+            3. Open `http://localhost:8000` in a browser
+
+            The `templates/` directory must stay alongside the binary.
+          files: |
+            artifacts/fd_logger-linux-x86_64/fd_logger-linux-x86_64.tar.gz
+            artifacts/fd_logger-windows-x86_64/fd_logger-windows-x86_64.zip
+            artifacts/fd_logger-macos-x86_64/fd_logger-macos-x86_64.tar.gz
+            artifacts/fd_logger-macos-arm64/fd_logger-macos-arm64.tar.gz
+          draft: false
+          prerelease: false
