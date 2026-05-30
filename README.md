@@ -4,6 +4,20 @@ A web-based contact logger for the ARRL Field Day amateur radio contest.
 Runs as a standalone local web server — no internet connection required.
 Multiple operators can log contacts simultaneously from any browser on the local network.
 
+## Screenshots
+
+### Setup Screen
+![Setup Screen](screenshots/Setup%20Screen.png)
+
+### Main Display – Dark Mode
+![Main Display Dark Mode](screenshots/MainDisplay_DarkMode.png)
+
+### Main Display – Light Mode
+![Main Display Light Mode](screenshots/MainDisplay_LightMode.png)
+
+### Main Display – With Contacts
+![Main Display With Contacts](screenshots/MainDisplay_with_contacts.png)
+
 ## Features
 
 - **Fast contact entry** — Tab cycles through Call / Class / Section; Enter submits
