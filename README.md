@@ -23,7 +23,7 @@ Multiple operators can log contacts simultaneously from any browser on the local
 - **Fast contact entry** — Tab cycles through Call / Class / Section; Enter submits
 - **Duplicate checking** — warns on (call, band, mode) duplicates per Field Day scoring rules
 - **ARRL / RAC sections grid** — all sections shown with worked / unworked status, tooltips, live count
-- **N1MM+ integration** — listens and broadcasts UDP contact messages on port 12060
+- **N1MM+ integration** — receives UDP contact messages from N1MM+ on port 12060 (receive only; see N1MM+ notes below)
 - **ADIF import / export** — import existing logs; export for submission or third-party software
 - **Accessibility** — ARIA landmarks, live regions, focus management, screen-reader announcements
 - **Keyboard shortcuts**
@@ -64,14 +64,21 @@ local network and navigate to `http://<host-ip>:8000`.
 On first launch you will be prompted to enter your station callsign, Field Day class,
 and section. This information is stored in the database and included in all exported logs.
 
-### N1MM+ broadcast address
+### N1MM+ integration
 
-By default UDP messages are broadcast to `255.255.255.255`. Override with an environment
-variable if your network requires a specific subnet broadcast address:
+FD Logger listens on UDP port 12060 for N1MM+ contact broadcasts and automatically
+adds incoming contacts (`contactinfo`), updates (`contactreplace`), and deletions
+(`contactdelete`) to the local log. Duplicate contacts (same call, band, and mode)
+are silently skipped.
 
-```bash
-N1MM_BROADCAST=192.168.1.255 ./fd_logger
-```
+**Receive only:** FD Logger does not send contacts back to N1MM+. N1MM+ uses
+Windows NetBIOS peer discovery to form its logging network and only accepts UDP
+contact messages from registered network members. Since FD Logger runs on Linux
+without a NetBIOS presence, outbound packets are dropped by N1MM+. If the N1MM+
+developers provide a supported integration path this may be added in a future
+release.
+
+**Firewall:** ensure UDP port 12060 is open inbound on the machine running FD Logger.
 
 ## Deployment
 
