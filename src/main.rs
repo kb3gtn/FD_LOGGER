@@ -25,11 +25,10 @@ use models::{ApiResponse, Contact, NewContact, SiteConfig};
 
 pub struct DbState(Mutex<Connection>);
 
-/// Address to broadcast N1MM UDP packets to.
-/// Default: 255.255.255.255 (limited broadcast — works on most LANs).
-/// Override with the N1MM_BROADCAST environment variable, e.g.
-///   N1MM_BROADCAST=192.168.1.255 ./fd_logger
-pub struct N1mmBroadcast(String);
+pub struct N1mmBroadcast {
+    pub addr: String,
+    pub port: u16,
+}
 
 // ── ADIF download responder ───────────────────────────────────────────────────
 
@@ -52,6 +51,7 @@ impl<'r, 'o: 'r> Responder<'r, 'o> for AdifDownload {
 
 struct N1mmFairing {
     db_path: String,
+    listen_port: u16,
 }
 
 #[rocket::async_trait]
@@ -61,7 +61,8 @@ impl Fairing for N1mmFairing {
     }
     async fn on_liftoff(&self, _rocket: &Rocket<Orbit>) {
         let db_path = self.db_path.clone();
-        rocket::tokio::spawn(n1mm::run_listener(db_path));
+        let port = self.listen_port;
+        rocket::tokio::spawn(n1mm::run_listener(db_path, port));
     }
 }
 
@@ -198,7 +199,7 @@ fn api_add_contact(
         Ok(c) => {
             if let Some(cfg) = config {
                 let xml = n1mm::build_contactinfo(&c, &cfg, &id);
-                n1mm::broadcast(&xml, &bcast.0);
+                n1mm::broadcast(&xml, &bcast.addr, bcast.port);
             }
             Json(ApiResponse::ok(c))
         }
@@ -226,10 +227,10 @@ fn api_update_contact(
                 if let Some(cfg) = config {
                     // N1MM protocol: send delete for old record, then replace for new
                     if let Some(ref old_c) = old {
-                        n1mm::broadcast(&n1mm::build_contactdelete(old_c, &cfg), &bcast.0);
+                        n1mm::broadcast(&n1mm::build_contactdelete(old_c, &cfg), &bcast.addr, bcast.port);
                     }
                     let n1mm_id = updated.n1mm_id.clone().unwrap_or_else(n1mm::new_id);
-                    n1mm::broadcast(&n1mm::build_contactreplace(&updated, &cfg, &n1mm_id), &bcast.0);
+                    n1mm::broadcast(&n1mm::build_contactreplace(&updated, &cfg, &n1mm_id), &bcast.addr, bcast.port);
                 }
                 Json(ApiResponse::ok(updated))
             }
@@ -255,7 +256,7 @@ fn api_delete_contact(
     match result {
         Ok(true) => {
             if let (Some(c), Some(cfg)) = (contact, config) {
-                n1mm::broadcast(&n1mm::build_contactdelete(&c, &cfg), &bcast.0);
+                n1mm::broadcast(&n1mm::build_contactdelete(&c, &cfg), &bcast.addr, bcast.port);
             }
             Json(ApiResponse::ok(()))
         }
@@ -397,15 +398,29 @@ fn rocket() -> _ {
     db::init_db(&conn)
         .unwrap_or_else(|e| panic!("Failed to initialize database: {}", e));
 
-    let broadcast_addr = std::env::var("N1MM_BROADCAST")
+    // Parse --n1mm-addr and --n1mm-port from CLI args; fall back to env/defaults.
+    let mut bcast_addr = std::env::var("N1MM_BROADCAST")
         .unwrap_or_else(|_| "255.255.255.255".to_string());
+    let mut bcast_port = n1mm::PORT;
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--n1mm-addr" => { if let Some(v) = args.next() { bcast_addr = v; } }
+            "--n1mm-port" => {
+                if let Some(v) = args.next() {
+                    if let Ok(p) = v.parse::<u16>() { bcast_port = p; }
+                }
+            }
+            _ => {}
+        }
+    }
 
     println!("FD Logger starting on http://0.0.0.0:8000");
-    println!("N1MM broadcast target: {}:{}", broadcast_addr, n1mm::PORT);
+    println!("N1MM broadcast target: {}:{}", bcast_addr, bcast_port);
 
     rocket::build()
         .manage(DbState(Mutex::new(conn)))
-        .manage(N1mmBroadcast(broadcast_addr.clone()))
+        .manage(N1mmBroadcast { addr: bcast_addr, port: bcast_port })
         .mount(
             "/",
             routes![
@@ -424,5 +439,5 @@ fn rocket() -> _ {
             ],
         )
         .attach(Template::fairing())
-        .attach(N1mmFairing { db_path: db_path.to_string() })
+        .attach(N1mmFairing { db_path: db_path.to_string(), listen_port: n1mm::PORT })
 }

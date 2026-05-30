@@ -9,8 +9,10 @@
 //! N1MM band field: MHz float strings ("3.5", "14", "50", …)
 //! N1MM mode field: "CW", "SSB", "USB", "LSB", "DIG", "RTTY", "FT8", …
 
-use std::net::UdpSocket;
+use std::net::{SocketAddr, UdpSocket};
 use std::sync::atomic::{AtomicU64, Ordering};
+
+use socket2::{Domain, Protocol, Socket, Type};
 
 use chrono::Utc;
 use rusqlite::Connection;
@@ -68,13 +70,18 @@ pub fn mhz_to_band(mhz: &str) -> &'static str {
 
 // ── Mode conversion ──────────────────────────────────────────────────────────
 
-/// Our mode → N1MM mode string.
-pub fn mode_to_n1mm(mode: &str) -> &'static str {
+/// Our mode → N1MM radio mode string.
+/// N1MM uses the actual submode (LSB/USB/CW/DIG), not the generic "SSB".
+/// Phone below 10m is conventionally LSB; 10m and above is USB.
+pub fn mode_to_n1mm(mode: &str, band: &str) -> &'static str {
     match mode {
-        "PH"  => "SSB",
         "CW"  => "CW",
         "DIG" => "DIG",
-        _     => "SSB",
+        "PH"  => match band {
+            "10M" | "6M" | "2M" | "70CM" => "USB",
+            _                              => "LSB",
+        },
+        _ => "LSB",
     }
 }
 
@@ -126,7 +133,7 @@ fn is_valid_section(s: &str) -> bool {
 pub fn build_contactinfo(c: &Contact, cfg: &SiteConfig, id: &str) -> String {
     let ts   = format!("{} {}:00", c.date, c.time);
     let band = band_to_mhz(&c.band);
-    let mode = mode_to_n1mm(&c.mode);
+    let mode = mode_to_n1mm(&c.mode, &c.band);
     let sent = format!("{} {}", cfg.class, cfg.section);
     xml_envelope("contactinfo", c, cfg, id, &ts, band, mode, &sent)
 }
@@ -134,7 +141,7 @@ pub fn build_contactinfo(c: &Contact, cfg: &SiteConfig, id: &str) -> String {
 pub fn build_contactreplace(c: &Contact, cfg: &SiteConfig, id: &str) -> String {
     let ts   = format!("{} {}:00", c.date, c.time);
     let band = band_to_mhz(&c.band);
-    let mode = mode_to_n1mm(&c.mode);
+    let mode = mode_to_n1mm(&c.mode, &c.band);
     let sent = format!("{} {}", cfg.class, cfg.section);
     xml_envelope("contactreplace", c, cfg, id, &ts, band, mode, &sent)
 }
@@ -145,7 +152,7 @@ pub fn build_contactdelete(c: &Contact, cfg: &SiteConfig) -> String {
     format!(
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
          <contactdelete>\n\
-         <app>FDLogger</app>\n\
+         <app>N1MM</app>\n\
          <timestamp>{ts}</timestamp>\n\
          <mycall>{mycall}</mycall>\n\
          <band>{band}</band>\n\
@@ -162,42 +169,118 @@ pub fn build_contactdelete(c: &Contact, cfg: &SiteConfig) -> String {
     )
 }
 
+/// N1MM rxfreq/txfreq: kHz × 100 for each band's typical phone calling freq.
+fn band_to_freq100(band_mhz: &str) -> &'static str {
+    match band_mhz {
+        "1.8"  => "182500",   // 1825 kHz
+        "3.5"  => "390000",   // 3900 kHz (80m phone)
+        "7"    => "712500",   // 7125 kHz (40m phone)
+        "14"   => "1422500",  // 14225 kHz
+        "21"   => "2130000",  // 21300 kHz
+        "28"   => "2840000",  // 28400 kHz
+        "50"   => "5012500",  // 50125 kHz
+        "144"  => "14420000", // 144200 kHz
+        "432"  => "43210000", // 432100 kHz
+        _      => "1422500",
+    }
+}
+
+/// Build a Cabrillo QSO line to include in the XML (informational for N1MM).
+fn cabrillo_string(c: &Contact, cfg: &SiteConfig, band_mhz: &str) -> String {
+    // Frequency in kHz (no decimal)
+    let freq_khz = band_to_freq100(band_mhz)
+        .parse::<u64>()
+        .unwrap_or(1422500) / 100;
+    let mode_cab = match c.mode.as_str() {
+        "CW"  => "CW",
+        "DIG" => "DIG",
+        _     => "PH",
+    };
+    // Date YYYY-MM-DD, time HHMM
+    let time = c.time.replace(':', "");
+    let sent = format!("{} {}", cfg.class, cfg.section);
+    let rcvd = format!("{} {}", c.class, c.section);
+    format!(
+        "QSO: {:>6} {} {} {} {:<13} {:<6} {:<3} {:<13} {:<6} {:<3}",
+        freq_khz, mode_cab, c.date, &time[..4.min(time.len())],
+        cfg.callsign, cfg.class, cfg.section,
+        c.call, c.class, c.section,
+    ).replace("  ", " ") // collapse extra spaces in sent/rcvd if short
+    // Note: exact column alignment not critical; N1MM uses this for display only
+    + &format!("  sent={} rcvd={}", sent, rcvd) // fallback readable form
+}
+
 fn xml_envelope(
     root: &str,
     c: &Contact,
     cfg: &SiteConfig,
     id: &str,
     ts: &str,
-    band: &str,
+    band_mhz: &str,
     mode: &str,
     sent: &str,
 ) -> String {
+    let freq = band_to_freq100(band_mhz);
+    let cabrillo = cabrillo_string(c, cfg, band_mhz);
     format!(
         "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n\
          <{root}>\n\
-         <app>FDLogger</app>\n\
-         <contestname>FD</contestname>\n\
-         <contestnr>1</contestnr>\n\
-         <timestamp>{ts}</timestamp>\n\
-         <mycall>{mycall}</mycall>\n\
-         <band>{band}</band>\n\
-         <rxfreq>0</rxfreq>\n\
-         <txfreq>0</txfreq>\n\
-         <operator>{operator}</operator>\n\
-         <mode>{mode}</mode>\n\
-         <call>{call}</call>\n\
-         <exchange1>{class}</exchange1>\n\
-         <section>{section}</section>\n\
-         <SentExchange>{sent}</SentExchange>\n\
-         <StationName>FDLogger</StationName>\n\
-         <ID>{id}</ID>\n\
-         <IsClaimedQso>1</IsClaimedQso>\n\
-         <IsOriginal>True</IsOriginal>\n\
+         \t<app>N1MM</app>\n\
+         \t<contestname>FD</contestname>\n\
+         \t<dbname>fd_logger.db</dbname>\n\
+         \t<contestnr>1</contestnr>\n\
+         \t<timestamp>{ts}</timestamp>\n\
+         \t<mycall>{mycall}</mycall>\n\
+         \t<band>{band}</band>\n\
+         \t<rxfreq>{freq}</rxfreq>\n\
+         \t<txfreq>{freq}</txfreq>\n\
+         \t<operator>{operator}</operator>\n\
+         \t<mode>{mode}</mode>\n\
+         \t<call>{call}</call>\n\
+         \t<countryprefix>K</countryprefix>\n\
+         \t<wpxprefix></wpxprefix>\n\
+         \t<stationprefix>{mycall}</stationprefix>\n\
+         \t<continent>NA</continent>\n\
+         \t<snt>59</snt>\n\
+         \t<sntnr>0</sntnr>\n\
+         \t<rcv>59</rcv>\n\
+         \t<rcvnr>0</rcvnr>\n\
+         \t<gridsquare></gridsquare>\n\
+         \t<exchange1>{class}</exchange1>\n\
+         \t<section>{section}</section>\n\
+         \t<comment></comment>\n\
+         \t<qth></qth>\n\
+         \t<name></name>\n\
+         \t<power></power>\n\
+         \t<misctext></misctext>\n\
+         \t<zone>0</zone>\n\
+         \t<prec></prec>\n\
+         \t<ck>0</ck>\n\
+         \t<ismultiplier1>0</ismultiplier1>\n\
+         \t<ismultiplier2>0</ismultiplier2>\n\
+         \t<ismultiplier3>0</ismultiplier3>\n\
+         \t<points>1</points>\n\
+         \t<radionr>1</radionr>\n\
+         \t<run1run2>1</run1run2>\n\
+         \t<RoverLocation></RoverLocation>\n\
+         \t<RadioInterfaced>0</RadioInterfaced>\n\
+         \t<NetworkedCompNr>0</NetworkedCompNr>\n\
+         \t<IsOriginal>True</IsOriginal>\n\
+         \t<NetBiosName>FDLogger</NetBiosName>\n\
+         \t<IsRunQSO>0</IsRunQSO>\n\
+         \t<StationName>FDLogger</StationName>\n\
+         \t<ID>{id}</ID>\n\
+         \t<IsClaimedQso>1</IsClaimedQso>\n\
+         \t<oldtimestamp>{ts}</oldtimestamp>\n\
+         \t<oldcall>{call}</oldcall>\n\
+         \t<SentExchange>{sent}</SentExchange>\n\
+         \t<CabrilloString>{cabrillo}</CabrilloString>\n\
          </{root}>",
         root     = root,
         ts       = ts,
         mycall   = cfg.callsign,
-        band     = band,
+        band     = band_mhz,
+        freq     = freq,
         operator = c.operator,
         mode     = mode,
         call     = c.call,
@@ -205,6 +288,7 @@ fn xml_envelope(
         section  = c.section,
         sent     = sent,
         id       = id,
+        cabrillo = cabrillo,
     )
 }
 
@@ -212,11 +296,12 @@ fn xml_envelope(
 
 /// Send one UDP datagram.  Uses std (blocking) socket because sends complete
 /// almost instantly and callers are already in a synchronous context.
-pub fn broadcast(xml: &str, addr: &str) {
+pub fn broadcast(xml: &str, addr: &str, port: u16) {
+    let target = format!("{}:{}", addr, port);
+    println!("[N1MM] ▶ broadcasting to {}\n{}\n[N1MM] ---", target, xml.trim());
     match UdpSocket::bind("0.0.0.0:0") {
         Ok(sock) => {
             let _ = sock.set_broadcast(true);
-            let target = format!("{}:{}", addr, PORT);
             match sock.send_to(xml.as_bytes(), &target) {
                 Ok(n)  => println!("[N1MM] ▶ sent {} bytes to {}", n, target),
                 Err(e) => eprintln!("[N1MM] send error: {}", e),
@@ -228,12 +313,28 @@ pub fn broadcast(xml: &str, addr: &str) {
 
 // ── Listener (async, runs as a background Tokio task) ────────────────────────
 
-pub async fn run_listener(db_path: String) {
-    let sock = match rocket::tokio::net::UdpSocket::bind(format!("0.0.0.0:{}", PORT)).await {
-        Ok(s)  => { println!("[N1MM] Listening on UDP :{}", PORT); s }
-        Err(e) => { eprintln!("[N1MM] Cannot bind UDP :{} – {}", PORT, e); return; }
+pub async fn run_listener(db_path: String, port: u16) {
+    let addr: SocketAddr = format!("0.0.0.0:{}", port).parse().unwrap();
+    let raw = match Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP)) {
+        Ok(s)  => s,
+        Err(e) => { eprintln!("[N1MM] Cannot create UDP socket: {}", e); return; }
+    };
+    let _ = raw.set_reuse_address(true);
+    if let Err(e) = raw.bind(&addr.into()) {
+        eprintln!("[N1MM] Cannot bind UDP :{} – {}", port, e);
+        return;
+    }
+    raw.set_nonblocking(true).unwrap();
+    let std_sock: UdpSocket = raw.into();
+    let sock = match rocket::tokio::net::UdpSocket::from_std(std_sock) {
+        Ok(s)  => { println!("[N1MM] Listening on UDP :{}", port); s }
+        Err(e) => { eprintln!("[N1MM] Cannot convert to tokio socket: {}", e); return; }
     };
     let _ = sock.set_broadcast(true);
+    let _ = sock.join_multicast_v4(
+        std::net::Ipv4Addr::new(239, 255, 0, 0), 
+        std::net::Ipv4Addr::UNSPECIFIED,
+    );
 
     let mut buf = vec![0u8; 65_535];
     loop {
@@ -243,15 +344,24 @@ pub async fn run_listener(db_path: String) {
         };
         let xml = match std::str::from_utf8(&buf[..len]) {
             Ok(s)  => s.to_string(),
-            Err(_) => continue,
+            Err(_) => {
+                eprintln!("[N1MM] ← {} bytes from {} (non-UTF8, ignored)", len, from);
+                continue;
+            }
         };
 
-        // Ignore our own broadcasts
-        if xml_field(&xml, "app") == "FDLogger" {
+        println!("[N1MM] ← {} bytes from {}", len, from);
+        println!("[N1MM] raw:\n{}\n[N1MM] ---", xml.trim());
+
+        // Ignore our own broadcasts (we now send app=N1MM, so key off StationName)
+        let station = xml_field(&xml, "StationName");
+        if station == "FDLogger" {
+            println!("[N1MM] ← ignoring our own broadcast");
             continue;
         }
 
         let tag = root_tag(&xml).to_string();
+        println!("[N1MM] ← root tag: {:?}  station: {:?}", tag, station);
         let db_path = db_path.clone();
         rocket::tokio::task::spawn_blocking(move || {
             match tag.as_str() {
@@ -293,6 +403,9 @@ fn handle_contactinfo(xml: &str, db_path: &str) {
     let sect = if is_valid_section(&section) { section } else { "DX".to_string() };
 
     let (date, time) = split_timestamp(&timestamp);
+
+    println!("[N1MM] contactinfo parsed: call={} band={} ({}MHz) mode={} ({}) class={} section={} op={} ts={}",
+        call, band, band_mhz, mode, mode_raw, class, sect, operator, timestamp);
 
     let contact = NewContact { call: call.clone(), band, mode, class, section: sect, operator };
 
