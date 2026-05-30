@@ -1,0 +1,21 @@
+[package]
+name = "fd_logger"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "fd_logger"
+path = "src/main.rs"
+
+[dependencies]
+rocket = { version = "0.5", features = ["json"] }
+rocket_dyn_templates = { version = "0.2", features = ["tera"] }
+rusqlite = { version = "0.31", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

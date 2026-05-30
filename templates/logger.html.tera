@@ -1,0 +1,1344 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FD Logger – {{ config.callsign }}</title>
+<style>
+/* ── Theme tokens ─────────────────────────────────── */
+:root {
+  /* Palette: #0F0F0F · #232D3F · #005B41 · #008170   */
+  --bg:         #0f0f0f;   /* near-black page background          */
+  --surface:    #232d3f;   /* card / panel backgrounds            */
+  --surface2:   #1a2333;   /* table headers, secondary surfaces   */
+  --border:     #2e3f58;   /* subtle dividers                     */
+  --border2:    #405572;   /* stronger borders, hover states      */
+  --text:       #e6edf3;
+  --text-muted: #8b9ab5;
+  --text-dim:   #7a9bbf;
+  --accent:     #008170;   /* teal – links, focus rings           */
+  --success:    #7fffd4;   /* aquamarine – text on teal bg        */
+  --success-bg: #005b41;   /* dark teal – button / badge bg       */
+  --success-bd: #008170;   /* teal – borders on success elements  */
+  --warn:       #ffa657;
+  --danger:     #f85149;
+  --danger-bg:  #3d1a1a;
+  --worked-bg:  #005b41;   /* dark teal – worked section bg       */
+  --worked-txt: #7fffd4;   /* aquamarine – text on worked badges  */
+  --worked-bd:  #008170;   /* teal – worked badge border          */
+  --un-bg:      #1a2333;   /* unworked badge bg                   */
+  --un-txt:     #56708a;   /* muted blue-grey                     */
+  --un-bd:      #2e3f58;
+  --input-bg:   #0f0f0f;
+  --row-hover:  #1d2d42;
+  --thead-bg:   #1a2333;
+  --dupe-bg:    #3d2600;
+  --dupe-text:  #ffa657;
+  --dupe-bd:    #7d4e00;
+}
+[data-theme="light"] {
+  --bg:         #f6f8fa;
+  --surface:    #ffffff;
+  --surface2:   #eaeef2;
+  --border:     #d0d7de;
+  --border2:    #8c959f;
+  --text:       #1f2328;
+  --text-muted: #57606a;
+  --text-dim:   #8c959f;
+  --accent:     #0969da;
+  --success:    #1a7f37;
+  --success-bg: #d1f0d8;
+  --success-bd: #1a7f37;
+  --warn:       #bc4c00;
+  --danger:     #cf222e;
+  --danger-bg:  #ffebe9;
+  --worked-bg:  #d1f0d8;
+  --worked-txt: #1a7f37;
+  --worked-bd:  #1a7f37;
+  --un-bg:      #eaeef2;
+  --un-txt:     #57606a;
+  --un-bd:      #d0d7de;
+  --input-bg:   #ffffff;
+  --row-hover:  #f0f3f6;
+  --thead-bg:   #eaeef2;
+  --dupe-bg:    #fff3cd;
+  --dupe-text:  #664d03;
+  --dupe-bd:    #ffc107;
+}
+
+/* ── Reset ────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { zoom: 1.5; }
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  transition: background 0.2s, color 0.2s;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ── Accessibility utilities ──────────────────────── */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+}
+/* Skip-to-content link — visible only on focus */
+.skip-link {
+  position: absolute; top: -100px; left: 0.75rem; z-index: 500;
+  padding: 0.5rem 1rem;
+  background: var(--accent); color: #fff;
+  font-weight: 700; border-radius: 0 0 6px 6px;
+  transition: top 0.15s;
+}
+.skip-link:focus { top: 0; outline: 3px solid var(--warn); outline-offset: 2px; }
+
+/* Consistent focus ring for all interactive elements */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Header ───────────────────────────────────────── */
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0.55rem 1rem;
+  display: flex; align-items: center;
+  justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;
+}
+.site-info { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+.site-info .callsign { font-size: 1.1rem; font-weight: 800; color: var(--warn); }
+.site-info .meta     { font-size: 0.85rem; color: var(--text-muted); }
+.site-info .meta strong { color: var(--text); }
+
+.utc-clock {
+  font-family: 'Courier New', monospace;
+  font-size: 0.82rem; font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.2rem 0.55rem;
+  letter-spacing: 0.03em;
+}
+
+.header-right { display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+
+/* ── Buttons ──────────────────────────────────────── */
+.btn {
+  padding: 0.35rem 0.8rem;
+  border-radius: 5px; font-size: 0.8rem; font-weight: 600;
+  cursor: pointer; border: 1px solid transparent;
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.btn-export { background: var(--success-bg); color: var(--success); border-color: var(--success-bd); }
+.btn-export:hover { background: var(--success-bd); color: #fff; text-decoration: none; }
+.btn-import { background: var(--surface2); color: var(--accent); border-color: var(--accent); cursor: pointer; }
+.btn-import:hover { background: var(--accent); color: #fff; text-decoration: none; }
+.btn-setup  { background: transparent; color: var(--text-muted); border-color: var(--border); }
+.btn-setup:hover  { color: var(--text); border-color: var(--border2); text-decoration: none; }
+.btn-theme  { background: var(--surface2); color: var(--text-muted); border-color: var(--border);
+              font-size: 1rem; padding: 0.22rem 0.55rem; }
+.btn-theme:hover  { color: var(--text); border-color: var(--border2); }
+
+/* ── Layout ───────────────────────────────────────── */
+main { padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.75rem; }
+.top-row { display: flex; gap: 0.75rem; align-items: flex-start; flex-wrap: wrap; }
+
+/* ── Cards ────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.85rem 1rem;
+}
+.card-heading {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 0.65rem; flex-wrap: wrap; gap: 0.3rem;
+}
+.card-heading h2 {
+  font-size: 0.8rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+.mode-ind {
+  font-size: 0.72rem; font-weight: 700;
+  color: var(--accent); border: 1px solid var(--accent);
+  border-radius: 20px; padding: 0.1rem 0.55rem;
+  cursor: default; white-space: nowrap;
+  transition: color 0.2s, border-color 0.2s;
+}
+.sect-count-badge {
+  font-size: 0.78rem; font-weight: 600;
+  color: var(--worked-txt);
+  background: var(--worked-bg);
+  border: 1px solid var(--worked-bd);
+  border-radius: 20px;
+  padding: 0.1rem 0.55rem;
+}
+
+/* ── Sections grid ────────────────────────────────── */
+.sections-card { flex: 1 1 500px; }
+.districts { display: flex; flex-direction: column; gap: 0.3rem; }
+.district  { display: flex; align-items: flex-start; gap: 0.5rem; }
+.district-label {
+  font-size: 0.7rem; color: var(--text-muted);
+  min-width: 130px; padding-top: 3px; white-space: nowrap;
+}
+.district-sections { display: flex; flex-wrap: wrap; gap: 3px; }
+.sect-badge {
+  display: inline-block;
+  padding: 3px 7px; border-radius: 4px;
+  font-size: 0.8rem; font-weight: 700;
+  background: var(--un-bg); color: var(--un-txt); border: 1px solid var(--un-bd);
+  cursor: default; user-select: none;
+  transition: background 0.25s, color 0.25s, border-color 0.25s;
+  /* Minimum touch target size */
+  min-width: 32px; text-align: center;
+}
+.sect-badge.worked {
+  background: var(--worked-bg); color: var(--worked-txt); border-color: var(--worked-bd);
+}
+
+/* ── Log entry card ───────────────────────────────── */
+.log-card { flex: 0 0 315px; min-width: 270px; }
+.aux-fields {
+  display: flex; gap: 0.45rem; margin-bottom: 0.75rem; flex-wrap: wrap;
+  padding-bottom: 0.75rem; border-bottom: 1px solid var(--border);
+}
+.aux-fields .form-group { flex: 1 1 75px; }
+.primary-fields { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 0.75rem; }
+
+.form-group { display: flex; flex-direction: column; }
+.form-group label {
+  display: flex; justify-content: space-between;
+  font-size: 0.72rem; font-weight: 700;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;
+  margin-bottom: 0.22rem;
+}
+.tab-hint { color: var(--text-dim); font-size: 0.68rem; text-transform: none; letter-spacing: 0; font-weight: 400; }
+
+input.primary, input.aux, select.aux {
+  width: 100%; padding: 0.42rem 0.6rem;
+  background: var(--input-bg); border: 1px solid var(--border);
+  border-radius: 5px; color: var(--text); font-size: 0.9rem;
+  transition: border-color 0.15s;
+}
+input.primary { font-size: 1rem; font-weight: 600; border-color: var(--border2); }
+input.aux, select.aux { font-size: 0.85rem; }
+input.fld-invalid { border-color: var(--danger) !important; }
+input.fld-valid   { border-color: var(--success) !important; }
+
+.field-err {
+  font-size: 0.7rem; color: var(--danger);
+  margin-top: 3px; min-height: 0.85em; line-height: 1.3;
+}
+.field-hint {
+  font-size: 0.75rem; color: var(--accent);
+  margin-top: 2px; min-height: 0.9em; font-style: italic;
+  display: block;
+}
+.dupe-warning {
+  display: none;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: var(--dupe-bg);
+  color: var(--dupe-text);
+  border: 1px solid var(--dupe-bd);
+  border-radius: 4px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.log-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.25rem; }
+.btn-log {
+  padding: 0.5rem 1.25rem;
+  background: var(--success-bg); color: var(--success);
+  border: 1px solid var(--success-bd); border-radius: 6px;
+  font-size: 0.95rem; font-weight: 700; cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  /* Large touch target */
+  min-height: 40px;
+}
+.btn-log:hover { background: var(--success-bd); color: #fff; }
+
+/* Status output for sighted users */
+#log-status {
+  font-size: 0.82rem; padding: 0.25rem 0.55rem; border-radius: 4px;
+}
+#log-status.success { color: var(--success);   background: var(--success-bg); }
+#log-status.error   { color: var(--danger);    background: var(--danger-bg);  }
+#log-status.dupe    { color: var(--dupe-text); background: var(--dupe-bg);    }
+
+/* ── Contacts table ───────────────────────────────── */
+.contacts-card { width: 100%; }
+.contacts-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 0.65rem; flex-wrap: wrap; gap: 0.4rem;
+}
+.contacts-header h2 { margin: 0; }
+.page-info { font-size: 0.8rem; color: var(--text-muted); }
+.total-badge {
+  color: var(--text); font-size: 1rem; font-weight: 400;
+}
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+thead th {
+  text-align: left; padding: 0.4rem 0.5rem;
+  background: var(--thead-bg); color: var(--text-muted);
+  font-size: 0.8rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+tbody tr:hover { background: var(--row-hover); }
+tbody td {
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--surface2);
+  white-space: nowrap;
+}
+td.call { font-weight: 700; color: var(--warn); }
+td.empty { text-align: center; color: var(--text-muted); padding: 2rem; font-size: 0.9rem; }
+td.actions { display: flex; gap: 0.3rem; }
+
+.btn-edit, .btn-del {
+  padding: 0.28rem 0.6rem; border-radius: 4px;
+  font-size: 0.75rem; font-weight: 600; cursor: pointer;
+  border: 1px solid transparent;
+  /* Minimum 36px touch target */
+  min-height: 36px; display: inline-flex; align-items: center;
+}
+.btn-edit { background: var(--surface2); color: var(--accent); border-color: var(--border2); }
+.btn-edit:hover { background: var(--accent); color: #fff; }
+.btn-del  { background: var(--danger-bg); color: var(--danger); border-color: var(--danger); }
+.btn-del:hover  { background: var(--danger); color: #fff; }
+
+/* ── Pagination ───────────────────────────────────── */
+nav.pagination { display: flex; gap: 0.35rem; margin-top: 0.75rem; flex-wrap: wrap; align-items: center; }
+.page-btn {
+  padding: 0.28rem 0.65rem; border-radius: 4px;
+  font-size: 0.8rem; font-weight: 600;
+  border: 1px solid var(--border); color: var(--text); background: var(--surface2);
+  text-decoration: none; min-height: 36px; display: inline-flex; align-items: center;
+  transition: background 0.15s;
+}
+.page-btn:hover { background: var(--border); text-decoration: none; }
+.page-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.page-btn[aria-current="page"] { font-weight: 800; }
+
+/* ── Edit Modal ───────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.65);
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+}
+.modal-dialog {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 1.5rem; width: 100%; max-width: 400px;
+  max-height: 90vh; overflow-y: auto;
+}
+.modal-dialog h3 { font-size: 1.05rem; margin-bottom: 1rem; color: var(--accent); }
+.modal-dialog .form-group { margin-bottom: 0.75rem; }
+.modal-dialog label {
+  font-size: 0.72rem; font-weight: 700; color: var(--text-muted);
+  text-transform: uppercase; margin-bottom: 0.22rem; display: block;
+}
+.modal-dialog input, .modal-dialog select {
+  width: 100%; padding: 0.42rem 0.6rem; background: var(--input-bg);
+  border: 1px solid var(--border); border-radius: 5px; color: var(--text); font-size: 0.9rem;
+}
+.modal-dialog input:focus, .modal-dialog select:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.modal-actions { display: flex; gap: 0.5rem; margin-top: 1.1rem; justify-content: flex-end; }
+.btn-save   {
+  padding: 0.45rem 1.1rem; background: var(--success-bg); color: var(--success);
+  border: 1px solid var(--success-bd); border-radius: 5px; font-size: 0.9rem; font-weight: 700; cursor: pointer;
+  min-height: 40px;
+}
+.btn-save:hover { background: var(--success-bd); color: #fff; }
+.btn-cancel {
+  padding: 0.45rem 1.1rem; background: transparent; color: var(--text-muted);
+  border: 1px solid var(--border); border-radius: 5px; font-size: 0.9rem; cursor: pointer;
+  min-height: 40px;
+}
+.btn-cancel:hover { color: var(--text); border-color: var(--border2); }
+</style>
+</head>
+<body>
+
+<!-- Skip to main content (screen-reader / keyboard users) -->
+<a href="#log-form" class="skip-link">Skip to log entry form</a>
+
+<!-- Screen-reader live announcement regions (visually hidden) -->
+<div id="sr-polite" role="status" aria-live="polite" aria-atomic="true" class="sr-only"></div>
+<div id="sr-alert"  role="alert"  aria-live="assertive" aria-atomic="true" class="sr-only"></div>
+
+<header role="banner">
+  <div class="site-info">
+    <span class="callsign" aria-label="Operating callsign">🎙 {{ config.callsign }}</span>
+    <span class="meta">Class: <strong>{{ config.class }}</strong></span>
+    <span class="meta" aria-hidden="true">|</span>
+    <span class="meta">Section: <strong>{{ config.section }}</strong></span>
+  </div>
+  <div class="header-right">
+    <time id="utc-clock" class="utc-clock" aria-label="Current UTC time" datetime="">--:--:-- UTC</time>
+    <button class="btn btn-theme" id="theme-toggle"
+            aria-label="Switch to light theme"
+            onclick="toggleTheme()">🌙</button>
+    <a href="/export/adif" class="btn btn-export"
+       aria-label="Export log as ADIF file download">⬇ Export ADIF</a>
+    <label for="adif-file-input" class="btn btn-import"
+           aria-label="Import contacts from ADIF file">⬆ Import ADIF</label>
+    <input type="file" id="adif-file-input"
+           accept=".adi,.adif,text/plain"
+           style="position:absolute;left:-9999px;width:1px;height:1px"
+           aria-hidden="true"
+           onchange="handleAdifImport(this)">
+    <a href="/setup" class="btn btn-setup"
+       aria-label="Change station setup">⚙ Setup</a>
+  </div>
+</header>
+
+<main id="main-content" role="main">
+  <div class="top-row">
+
+    <!-- ── ARRL Sections Card ── -->
+    <section class="card sections-card" aria-label="ARRL and RAC sections status">
+      <div class="card-heading">
+        <h2 id="sections-heading">ARRL / RAC Sections</h2>
+        <span class="sect-count-badge"
+              id="sect-count"
+              aria-label="{{ worked_count }} of {{ total_sections }} sections worked">
+          {{ worked_count }} / {{ total_sections }} worked
+        </span>
+      </div>
+      <div class="districts" role="list" aria-labelledby="sections-heading">
+        {% for district in districts %}
+        <div class="district"
+             role="listitem"
+             aria-label="District {{ district.label }}">
+          <div class="district-label" aria-hidden="true">{{ district.label }}</div>
+          <div class="district-sections">
+            {% for sect in district.sections %}
+            <span
+              class="sect-badge{% if sect.abbrev in worked_sections %} worked{% endif %}"
+              id="sect-{{ sect.abbrev }}"
+              title="{{ sect.name }}"
+              aria-label="{{ sect.name }}{% if sect.abbrev in worked_sections %}, worked{% else %}, not yet worked{% endif %}"
+            >{{ sect.abbrev }}</span>
+            {% endfor %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <!-- ── Log Entry Card ── -->
+    <section class="card log-card" aria-label="Log new contact">
+      <div class="card-heading">
+        <h2>Log Contact</h2>
+        <span id="entry-mode-ind"
+              class="mode-ind"
+              title="Fast-entry: Tab cycles Call→Class→Section→Call. F5 to switch."
+              aria-label="Keyboard mode: Fast entry. Press F5 to toggle.">⌨ Fast</span>
+      </div>
+
+      <form id="log-form"
+            aria-label="New contact entry"
+            onsubmit="event.preventDefault(); submitContact();"
+            novalidate>
+
+        <!-- Aux fields — not in primary tab order -->
+        <fieldset style="border:none;padding:0;">
+          <legend class="sr-only">Station and mode settings</legend>
+          <div class="aux-fields">
+            <div class="form-group">
+              <label for="band">Band <span class="tab-hint" aria-hidden="true">F1</span></label>
+              <select id="band" class="aux" tabindex="-1">
+                <option value="160M">160M</option>
+                <option value="80M">80M</option>
+                <option value="40M">40M</option>
+                <option value="20M">20M</option>
+                <option value="15M">15M</option>
+                <option value="10M">10M</option>
+                <option value="6M">6M</option>
+                <option value="2M">2M</option>
+                <option value="70CM">70CM</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="mode">Mode <span class="tab-hint" aria-hidden="true">F2</span></label>
+              <select id="mode" class="aux" tabindex="-1">
+                <option value="PH">PH</option>
+                <option value="CW">CW</option>
+                <option value="DIG">DIG</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="operator">Operator <span class="tab-hint" aria-hidden="true">F3</span></label>
+              <input type="text" id="operator" class="aux" tabindex="-1"
+                     placeholder="Callsign"
+                     autocomplete="off" autocorrect="off"
+                     autocapitalize="characters" spellcheck="false">
+            </div>
+          </div>
+        </fieldset>
+
+        <!-- Primary contact fields — tab order 1 → 2 → 3 → submit -->
+        <fieldset style="border:none;padding:0;">
+          <legend class="sr-only">Contact information (Tab cycles through these three fields)</legend>
+          <div class="primary-fields">
+
+            <div class="form-group">
+              <label for="call">
+                Call Sign
+                <span class="tab-hint" aria-hidden="true">Tab →</span>
+              </label>
+              <input type="text" id="call" class="primary" tabindex="1"
+                     placeholder="W1AW"
+                     autocomplete="off" autocorrect="off"
+                     autocapitalize="characters" spellcheck="false"
+                     aria-required="true"
+                     aria-describedby="dupe-warning"
+                     autofocus>
+              <div id="dupe-warning" class="dupe-warning" role="alert" aria-live="assertive"></div>
+            </div>
+
+            <div class="form-group">
+              <label for="cls">
+                Class
+                <span class="tab-hint" aria-hidden="true">Tab →</span>
+              </label>
+              <input type="text" id="cls" class="primary" tabindex="2"
+                     placeholder="4A"
+                     autocomplete="off" autocorrect="off"
+                     autocapitalize="characters" spellcheck="false"
+                     aria-required="true"
+                     aria-describedby="cls-err">
+              <span id="cls-err" class="field-err" role="alert"></span>
+            </div>
+
+            <div class="form-group">
+              <label for="section">
+                Section
+                <span class="tab-hint" aria-hidden="true">Enter = Log · F5 = mode</span>
+              </label>
+              <input type="text" id="section" class="primary" tabindex="3"
+                     placeholder="MDC"
+                     autocomplete="off" autocorrect="off"
+                     autocapitalize="characters" spellcheck="false"
+                     aria-required="true"
+                     aria-describedby="sect-name sect-err">
+              <span id="sect-name" class="field-hint" aria-live="polite"></span>
+              <span id="sect-err"  class="field-err"  role="alert"></span>
+            </div>
+
+          </div><!-- /.primary-fields -->
+        </fieldset>
+
+        <div class="log-actions">
+          <button type="submit" class="btn-log">Log Contact</button>
+          <!-- Visual status (sighted users) -->
+          <span id="log-status" aria-hidden="true"></span>
+        </div>
+
+      </form>
+    </section>
+
+  </div><!-- /.top-row -->
+
+  <!-- ── Contact List ── -->
+  <section class="card contacts-card" aria-label="Logged contacts">
+    <div class="contacts-header">
+      <h2>
+        Contacts
+        <span class="total-badge">
+          (<span id="contact-count">{{ total }}</span> total)
+        </span>
+        <span class="tab-hint" aria-hidden="true" style="margin-left:0.75rem">F4 = edit last</span>
+      </h2>
+      {% if total_pages > 1 %}
+      <div class="page-info" aria-label="Page {{ current_page }} of {{ total_pages }}">
+        Page {{ current_page }} / {{ total_pages }}
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="table-wrap">
+      <table aria-label="Contact log">
+        <thead>
+          <tr>
+            <th scope="col">#</th>
+            <th scope="col">Date UTC</th>
+            <th scope="col">Time UTC</th>
+            <th scope="col">Call</th>
+            <th scope="col">Band</th>
+            <th scope="col">Mode</th>
+            <th scope="col">Class</th>
+            <th scope="col">Section</th>
+            <th scope="col">Operator</th>
+            <th scope="col">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="contact-tbody">
+          {% if contacts | length == 0 %}
+          <tr id="empty-row">
+            <td class="empty" colspan="10">No contacts logged yet. Start logging above!</td>
+          </tr>
+          {% else %}
+          {% for c in contacts %}
+          <tr id="contact-{{ c.id }}"
+              data-id="{{ c.id }}" data-call="{{ c.call }}" data-band="{{ c.band }}"
+              data-mode="{{ c.mode }}" data-cls="{{ c.class }}" data-section="{{ c.section }}"
+              data-operator="{{ c.operator }}">
+            <td>{{ c.id }}</td>
+            <td>{{ c.date }}</td>
+            <td>{{ c.time }}</td>
+            <td class="call">{{ c.call }}</td>
+            <td>{{ c.band }}</td>
+            <td>{{ c.mode }}</td>
+            <td>{{ c.class }}</td>
+            <td>{{ c.section }}</td>
+            <td>{{ c.operator }}</td>
+            <td class="actions">
+              <button class="btn-edit"
+                      aria-label="Edit contact {{ c.call }}"
+                      onclick="openEdit(this.closest('tr'))">Edit</button>
+              <button class="btn-del"
+                      aria-label="Delete contact {{ c.call }}"
+                      onclick="delContact(this.closest('tr'))">Del</button>
+            </td>
+          </tr>
+          {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+
+    {% if total_pages > 1 %}
+    <nav class="pagination" aria-label="Contact list pages">
+      {% if current_page > 1 %}
+      <a href="/logger?page={{ current_page - 1 }}" class="page-btn"
+         aria-label="Previous page">← Prev</a>
+      {% endif %}
+      {% for i in range(end=total_pages) %}
+      <a href="/logger?page={{ i + 1 }}"
+         class="page-btn{% if i + 1 == current_page %} active{% endif %}"
+         {% if i + 1 == current_page %}aria-current="page"{% endif %}
+         aria-label="Page {{ i + 1 }}">{{ i + 1 }}</a>
+      {% endfor %}
+      {% if current_page < total_pages %}
+      <a href="/logger?page={{ current_page + 1 }}" class="page-btn"
+         aria-label="Next page">Next →</a>
+      {% endif %}
+    </nav>
+    {% endif %}
+  </section>
+
+</main><!-- /#main-content -->
+
+<!-- ── Edit Modal ── -->
+<div id="edit-modal"
+     class="modal-overlay"
+     style="display:none"
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="edit-modal-title"
+     onclick="if(event.target===this)closeModal()">
+  <div class="modal-dialog">
+    <h3 id="edit-modal-title">Edit Contact</h3>
+    <input type="hidden" id="edit-id">
+
+    <div class="form-group">
+      <label for="edit-call">Call Sign</label>
+      <input type="text" id="edit-call"
+             autocomplete="off" autocapitalize="characters" spellcheck="false"
+             aria-required="true">
+    </div>
+    <div class="form-group">
+      <label for="edit-band">Band</label>
+      <select id="edit-band">
+        <option value="160M">160M</option><option value="80M">80M</option>
+        <option value="40M">40M</option><option value="20M">20M</option>
+        <option value="15M">15M</option><option value="10M">10M</option>
+        <option value="6M">6M</option><option value="2M">2M</option>
+        <option value="70CM">70CM</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="edit-mode">Mode</label>
+      <select id="edit-mode">
+        <option value="PH">PH (Phone)</option>
+        <option value="CW">CW</option>
+        <option value="DIG">DIG (Digital)</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label for="edit-cls">Class</label>
+      <input type="text" id="edit-cls"
+             autocomplete="off" autocapitalize="characters" spellcheck="false"
+             aria-required="true" aria-describedby="edit-cls-err">
+      <span id="edit-cls-err" class="field-err" role="alert"></span>
+    </div>
+    <div class="form-group">
+      <label for="edit-section">Section</label>
+      <input type="text" id="edit-section"
+             autocomplete="off" autocapitalize="characters" spellcheck="false"
+             aria-required="true" aria-describedby="edit-sect-name edit-sect-err">
+      <span id="edit-sect-name" class="field-hint" aria-live="polite"></span>
+      <span id="edit-sect-err"  class="field-err"  role="alert"></span>
+    </div>
+    <div class="form-group">
+      <label for="edit-operator">Operator</label>
+      <input type="text" id="edit-operator"
+             autocomplete="off" autocapitalize="characters" spellcheck="false">
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button type="button" class="btn-save"   onclick="saveEdit()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Valid sections set (populated from server-rendered data) ──
+const VALID_SECTIONS = new Set([
+  {% for district in districts %}{% for sect in district.sections %}'{{ sect.abbrev }}',
+  {% endfor %}{% endfor %}'DX'
+]);
+
+const SECTION_NAMES = {
+  {% for district in districts %}{% for sect in district.sections %}'{{ sect.abbrev }}': '{{ sect.name }}',
+  {% endfor %}{% endfor %}'DX': 'Non-US or Canadian station'
+};
+const CLASS_RE = /^\d+[A-Fa-f]$/;
+const BANDS = ['160M','80M','40M','20M','15M','10M','6M','2M','70CM'];
+const MODES = ['PH','CW','DIG'];
+const MODE_NAMES = { PH: 'Phone', CW: 'CW', DIG: 'Digital' };
+
+// ── Fast-entry mode ────────────────────────────────────────────
+// true  = Tab in Section cycles back to Call (speed logging)
+// false = Tab flows naturally through the page (screen reader / browse mode)
+let fastEntryMode = true;
+
+function setFastEntry(on) {
+  fastEntryMode = on;
+  localStorage.setItem('fd_fast_entry', on ? '1' : '0');
+  const ind = document.getElementById('entry-mode-ind');
+  if (ind) {
+    ind.textContent    = on ? '⌨ Fast' : '🔍 Browse';
+    ind.title          = on ? 'Fast-entry: Tab cycles Call→Class→Section→Call. F5 to switch.'
+                            : 'Browse mode: Tab flows normally through the page. F5 to switch.';
+    ind.style.color    = on ? 'var(--accent)' : 'var(--text-muted)';
+    ind.style.borderColor = on ? 'var(--accent)' : 'var(--border)';
+  }
+  const msg = on ? 'Fast entry mode on. Tab cycles through Call, Class and Section.'
+                 : 'Navigation mode on. Tab flows normally through the page.';
+  announce(msg, false);
+  showStatus(on ? '⌨ Fast entry' : '🔍 Navigation', 'success');
+}
+// Restore from last session
+(function () {
+  const saved = localStorage.getItem('fd_fast_entry');
+  if (saved === '0') setFastEntry(false);
+})();
+
+// ── Theme ─────────────────────────────────────────────────────
+(function () { applyTheme(localStorage.getItem('fd_theme') || 'dark'); })();
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  const btn = document.getElementById('theme-toggle');
+  if (theme === 'dark') {
+    btn.textContent = '🌙';
+    btn.setAttribute('aria-label', 'Switch to light theme');
+  } else {
+    btn.textContent = '☀️';
+    btn.setAttribute('aria-label', 'Switch to dark theme');
+  }
+  localStorage.setItem('fd_theme', theme);
+}
+function toggleTheme() {
+  applyTheme(
+    document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'
+  );
+}
+
+// ── UTC clock ─────────────────────────────────────────────────
+function updateClock() {
+  const now = new Date();
+  const p = n => String(n).padStart(2, '0');
+  const d = now.getUTCFullYear() + '-' + p(now.getUTCMonth()+1) + '-' + p(now.getUTCDate());
+  const t = p(now.getUTCHours()) + ':' + p(now.getUTCMinutes()) + ':' + p(now.getUTCSeconds());
+  const el = document.getElementById('utc-clock');
+  el.textContent = d + ' ' + t + ' UTC';
+  el.setAttribute('datetime', d + 'T' + t + 'Z');
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── Screen-reader announcements ───────────────────────────────
+function announce(msg, urgent) {
+  const id = urgent ? 'sr-alert' : 'sr-polite';
+  const el = document.getElementById(id);
+  el.textContent = '';                   // clear to ensure re-announcement
+  requestAnimationFrame(function () { el.textContent = msg; });
+}
+
+// ── Restore operator ──────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', function () {
+  document.getElementById('operator').value = localStorage.getItem('fd_operator') || '';
+  document.getElementById('call').focus();
+});
+
+// ── Auto-uppercase on primary and modal fields ────────────────
+function autoUpper(el) {
+  el.addEventListener('input', function () {
+    const pos = this.selectionStart;
+    this.value = this.value.toUpperCase();
+    this.setSelectionRange(pos, pos);
+  });
+}
+['call','cls','section','edit-call','edit-cls','edit-section','edit-operator'].forEach(
+  function(id) { autoUpper(document.getElementById(id)); }
+);
+
+// ── Field validation ──────────────────────────────────────────
+function validateCls(val, errId, inputId) {
+  const v = val.trim().toUpperCase();
+  const err = document.getElementById(errId);
+  const inp = document.getElementById(inputId);
+  if (!v) { clearFld(inp, err); return true; }
+  if (CLASS_RE.test(v)) {
+    inp.classList.replace('fld-invalid', 'fld-valid') || inp.classList.add('fld-valid');
+    inp.setAttribute('aria-invalid', 'false');
+    err.textContent = '';
+    return true;
+  }
+  inp.classList.replace('fld-valid', 'fld-invalid') || inp.classList.add('fld-invalid');
+  inp.setAttribute('aria-invalid', 'true');
+  err.textContent = 'Must be a number followed by A–F (e.g. 4A, 10B)';
+  return false;
+}
+
+function validateSect(val, errId, inputId) {
+  const v = val.trim().toUpperCase();
+  const err = document.getElementById(errId);
+  const inp = document.getElementById(inputId);
+  if (!v) { clearFld(inp, err); return true; }
+  if (VALID_SECTIONS.has(v)) {
+    inp.classList.replace('fld-invalid', 'fld-valid') || inp.classList.add('fld-valid');
+    inp.setAttribute('aria-invalid', 'false');
+    err.textContent = '';
+    return true;
+  }
+  inp.classList.replace('fld-valid', 'fld-invalid') || inp.classList.add('fld-invalid');
+  inp.setAttribute('aria-invalid', 'true');
+  err.textContent = v + ' is not a valid ARRL/RAC section. Use DX for foreign stations.';
+  return false;
+}
+
+function clearFld(inp, err) {
+  inp.classList.remove('fld-invalid', 'fld-valid');
+  inp.removeAttribute('aria-invalid');
+  err.textContent = '';
+}
+
+// ── Dupe checking ──────────────────────────────────────────────
+let dupeActive = false;
+
+async function checkDupe() {
+  const call = document.getElementById('call').value.trim().toUpperCase();
+  const band = document.getElementById('band').value;
+  const mode = document.getElementById('mode').value;
+  const warn = document.getElementById('dupe-warning');
+
+  if (call.length < 3) { clearDupe(); return; }
+
+  try {
+    const resp = await fetch(
+      '/api/dupe?call=' + encodeURIComponent(call) +
+      '&band=' + encodeURIComponent(band) +
+      '&mode=' + encodeURIComponent(mode)
+    );
+    const data = await resp.json();
+    if (data.is_dupe) {
+      dupeActive = true;
+      warn.textContent = '⚠ DUPE – ' + call + ' already logged on ' + band + ' ' + mode;
+      warn.style.display = 'block';
+      announce('Duplicate: ' + call + ' already in log on ' + band + ' ' + mode, true);
+    } else {
+      clearDupe();
+    }
+  } catch (_) { clearDupe(); }
+}
+
+function clearDupe() {
+  dupeActive = false;
+  const warn = document.getElementById('dupe-warning');
+  warn.textContent = '';
+  warn.style.display = 'none';
+}
+
+// Re-check dupe whenever call field is left
+document.getElementById('call').addEventListener('blur', function () {
+  if (this.value.trim().length >= 3) checkDupe();
+});
+
+// Validate on blur (leaving the field)
+document.getElementById('cls').addEventListener('blur',         function () { validateCls(this.value, 'cls-err', 'cls'); });
+document.getElementById('section').addEventListener('blur',  function () { validateSect(this.value, 'sect-err', 'section'); });
+document.getElementById('section').addEventListener('input', function () {
+  const v = this.value.trim().toUpperCase();
+  document.getElementById('sect-name').textContent = SECTION_NAMES[v] || '';
+});
+document.getElementById('edit-cls').addEventListener('blur',    function () { validateCls(this.value, 'edit-cls-err', 'edit-cls'); });
+document.getElementById('edit-section').addEventListener('blur',  function () { validateSect(this.value, 'edit-sect-err', 'edit-section'); });
+document.getElementById('edit-section').addEventListener('input', function () {
+  const v = this.value.trim().toUpperCase();
+  document.getElementById('edit-sect-name').textContent = SECTION_NAMES[v] || '';
+});
+
+// ── Keyboard navigation ───────────────────────────────────────
+document.addEventListener('keydown', function (e) {
+  const id = document.activeElement && document.activeElement.id;
+
+  // F1 — cycle band; F2 — cycle mode (work from anywhere on the page)
+  if (e.key === 'F1') {
+    e.preventDefault();
+    const sel = document.getElementById('band');
+    const next = BANDS[(BANDS.indexOf(sel.value) + 1) % BANDS.length];
+    sel.value = next;
+    announce('Band changed to ' + next, false);
+    showStatus('Band: ' + next, 'success');
+    checkDupe();
+    return;
+  }
+  if (e.key === 'F2') {
+    e.preventDefault();
+    const sel = document.getElementById('mode');
+    const next = MODES[(MODES.indexOf(sel.value) + 1) % MODES.length];
+    sel.value = next;
+    announce('Mode changed to ' + next + ', ' + MODE_NAMES[next], false);
+    showStatus('Mode: ' + next, 'success');
+    checkDupe();
+    return;
+  }
+  if (e.key === 'F3') {
+    e.preventDefault();
+    const op = document.getElementById('operator');
+    op.select();
+    op.focus();
+    announce('Operator field selected. Current value: ' + (op.value || 'empty'), false);
+    return;
+  }
+  if (e.key === 'F5') {
+    e.preventDefault();   // prevent accidental page reload
+    setFastEntry(!fastEntryMode);
+    return;
+  }
+  if (e.key === 'F4') {
+    e.preventDefault();
+    const firstRow = document.querySelector('#contact-tbody tr[id^="contact-"]');
+    if (firstRow) {
+      openEdit(firstRow);
+      announce('Editing last contact: ' + firstRow.dataset.call, false);
+    } else {
+      announce('No contacts in log to edit', false);
+    }
+    return;
+  }
+
+  // Enter in Call → focus Class
+  if (e.key === 'Enter' && id === 'call') {
+    e.preventDefault();
+    document.getElementById('cls').focus();
+    return;
+  }
+  // Enter in Class → focus Section
+  if (e.key === 'Enter' && id === 'cls') {
+    e.preventDefault();
+    document.getElementById('section').focus();
+    return;
+  }
+  // Enter in Section → submit
+  if (e.key === 'Enter' && id === 'section') {
+    e.preventDefault();
+    submitContact();
+    return;
+  }
+  // Tab in Section — fast-entry: cycle to Call; browse: let Tab flow naturally
+  if (e.key === 'Tab' && id === 'section' && fastEntryMode) {
+    e.preventDefault();
+    document.getElementById('call').focus();
+    return;
+  }
+  // Escape: close modal if open, otherwise clear the log form (fast-entry mode)
+  if (e.key === 'Escape') {
+    if (document.getElementById('edit-modal').style.display !== 'none') {
+      closeModal();
+    } else if (fastEntryMode) {
+      clearForm();
+      announce('Form cleared', false);
+    }
+    return;
+  }
+});
+
+// ── Submit contact ────────────────────────────────────────────
+async function submitContact() {
+  const call     = document.getElementById('call').value.trim().toUpperCase();
+  const band     = document.getElementById('band').value;
+  const mode     = document.getElementById('mode').value;
+  const cls      = document.getElementById('cls').value.trim().toUpperCase();
+  const section  = document.getElementById('section').value.trim().toUpperCase();
+  const operator = document.getElementById('operator').value.trim().toUpperCase();
+
+  if (!call || call.length < 3) {
+    announce('Error: Call sign is required and must be at least 3 characters', true);
+    showStatus('Call sign required (min 3 chars)', 'error');
+    document.getElementById('call').focus();
+    return;
+  }
+  const clsOk  = validateCls(cls, 'cls-err', 'cls');
+  const sectOk = validateSect(section, 'sect-err', 'section');
+  if (!clsOk)  { document.getElementById('cls').focus();     return; }
+  if (!sectOk) { document.getElementById('section').focus(); return; }
+
+  localStorage.setItem('fd_operator', operator);
+
+  let result;
+  try {
+    const resp = await fetch('/api/contacts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ call, band, mode, class: cls, section, operator })
+    });
+    result = await resp.json();
+  } catch (err) {
+    const msg = 'Network error: ' + err;
+    announce(msg, true);
+    showStatus(msg, 'error');
+    return;
+  }
+
+  if (result.success) {
+    const wasDupe = dupeActive;
+    clearForm();   // also calls clearDupe() indirectly via call field reset
+    prependRow(result.data);
+    markWorked(section);
+    incrementCount();
+    if (wasDupe) {
+      const msg = 'DUPE logged: ' + call + ' ' + cls + ' ' + section;
+      announce(msg, false);
+      showStatus('⚠ DUPE logged: ' + call + ' ' + cls + ' ' + section, 'dupe');
+    } else {
+      const msg = 'Contact logged: ' + call + ', class ' + cls + ', section ' + section;
+      announce(msg, false);
+      showStatus('✓ ' + call + ' ' + cls + ' ' + section, 'success');
+    }
+  } else {
+    const msg = result.error || 'Error logging contact';
+    announce('Error: ' + msg, true);
+    showStatus(msg, 'error');
+  }
+}
+
+function clearForm() {
+  ['call','cls','section'].forEach(function (id) {
+    const el = document.getElementById(id);
+    el.value = '';
+    el.classList.remove('fld-valid', 'fld-invalid');
+    el.removeAttribute('aria-invalid');
+  });
+  document.getElementById('cls-err').textContent   = '';
+  document.getElementById('sect-name').textContent = '';
+  document.getElementById('sect-err').textContent  = '';
+  clearDupe();
+  document.getElementById('call').focus();
+}
+
+// ── Prepend row to table ──────────────────────────────────────
+function prependRow(c) {
+  const tbody = document.getElementById('contact-tbody');
+  const empty = document.getElementById('empty-row');
+  if (empty) empty.remove();
+  if (tbody.children.length >= 25) tbody.removeChild(tbody.lastChild);
+
+  const tr = document.createElement('tr');
+  tr.id = 'contact-' + c.id;
+  tr.dataset.id       = c.id;
+  tr.dataset.call     = c.call;
+  tr.dataset.band     = c.band;
+  tr.dataset.mode     = c.mode;
+  tr.dataset.cls      = c.class;
+  tr.dataset.section  = c.section;
+  tr.dataset.operator = c.operator;
+  tr.innerHTML =
+    '<td>' + c.id + '</td>' +
+    '<td>' + c.date + '</td>' +
+    '<td>' + c.time + '</td>' +
+    '<td class="call">' + c.call + '</td>' +
+    '<td>' + c.band + '</td>' +
+    '<td>' + c.mode + '</td>' +
+    '<td>' + c.class + '</td>' +
+    '<td>' + c.section + '</td>' +
+    '<td>' + c.operator + '</td>' +
+    '<td class="actions">' +
+      '<button class="btn-edit" aria-label="Edit contact ' + c.call + '" ' +
+              'onclick="openEdit(this.closest(\'tr\'))">Edit</button> ' +
+      '<button class="btn-del" aria-label="Delete contact ' + c.call + '" ' +
+              'onclick="delContact(this.closest(\'tr\'))">Del</button>' +
+    '</td>';
+  tbody.insertBefore(tr, tbody.firstChild);
+}
+
+function markWorked(section) {
+  const el = document.getElementById('sect-' + section);
+  if (el && !el.classList.contains('worked')) {
+    el.classList.add('worked');
+    // Update aria-label to reflect new worked state
+    el.setAttribute('aria-label',
+      el.getAttribute('aria-label').replace(', not yet worked', ', worked'));
+    // Update the worked count badge
+    const badge = document.getElementById('sect-count');
+    if (badge) {
+      const parts = badge.textContent.trim().split(' / ');
+      const newWorked = parseInt(parts[0]) + 1;
+      const total = parts[1].replace(' worked','').trim();
+      badge.textContent = newWorked + ' / ' + total + ' worked';
+      badge.setAttribute('aria-label', newWorked + ' of ' + total + ' sections worked');
+    }
+  }
+}
+
+// Full re-sync of all section badges from the server.
+// Called after delete or edit so badges can lose their worked state.
+async function refreshSections() {
+  let worked;
+  try {
+    const resp = await fetch('/api/sections');
+    worked = new Set(await resp.json());
+  } catch (_) { return; }
+
+  let workedCount = 0;
+  document.querySelectorAll('.sect-badge').forEach(function (el) {
+    const abbrev = el.id.replace('sect-', '');
+    const isWorked = worked.has(abbrev);
+    el.classList.toggle('worked', isWorked);
+    if (isWorked) workedCount++;
+    const name = el.getAttribute('title') || abbrev;
+    el.setAttribute('aria-label', name + (isWorked ? ', worked' : ', not yet worked'));
+  });
+
+  const badge = document.getElementById('sect-count');
+  if (badge) {
+    const total = document.querySelectorAll('.sect-badge').length;
+    badge.textContent = workedCount + ' / ' + total + ' worked';
+    badge.setAttribute('aria-label', workedCount + ' of ' + total + ' sections worked');
+  }
+}
+
+function incrementCount() {
+  const el = document.getElementById('contact-count');
+  el.textContent = parseInt(el.textContent || '0') + 1;
+}
+function decrementCount() {
+  const el = document.getElementById('contact-count');
+  el.textContent = Math.max(0, parseInt(el.textContent || '0') - 1);
+}
+
+// ── Delete ────────────────────────────────────────────────────
+async function delContact(tr) {
+  const id   = tr.dataset.id;
+  const call = tr.dataset.call;
+  if (!confirm('Delete contact #' + id + ' (' + call + ')?')) return;
+
+  let result;
+  try {
+    const resp = await fetch('/api/contacts/' + id, { method: 'DELETE' });
+    result = await resp.json();
+  } catch (err) { alert('Network error: ' + err); return; }
+
+  if (result.success) {
+    tr.remove();
+    decrementCount();
+    refreshSections();
+    announce('Contact ' + call + ' deleted', false);
+    const tbody = document.getElementById('contact-tbody');
+    if (tbody.children.length === 0) {
+      tbody.innerHTML =
+        '<tr id="empty-row"><td class="empty" colspan="10">No contacts logged yet.</td></tr>';
+    }
+  } else {
+    announce('Delete failed: ' + (result.error || 'unknown error'), true);
+    alert(result.error || 'Delete failed');
+  }
+}
+
+// ── Edit modal — with focus trap ──────────────────────────────
+let modalTrigger = null;
+
+function openEdit(tr) {
+  modalTrigger = document.activeElement;
+
+  document.getElementById('edit-id').value       = tr.dataset.id;
+  document.getElementById('edit-call').value     = tr.dataset.call;
+  document.getElementById('edit-band').value     = tr.dataset.band;
+  document.getElementById('edit-mode').value     = tr.dataset.mode;
+  document.getElementById('edit-cls').value      = tr.dataset.cls;
+  document.getElementById('edit-section').value  = tr.dataset.section;
+  document.getElementById('edit-operator').value = tr.dataset.operator;
+
+  ['edit-cls','edit-section'].forEach(function (id) {
+    const el = document.getElementById(id);
+    el.classList.remove('fld-valid','fld-invalid');
+    el.removeAttribute('aria-invalid');
+  });
+  document.getElementById('edit-sect-name').textContent = SECTION_NAMES[tr.dataset.section] || '';
+  document.getElementById('edit-cls-err').textContent   = '';
+  document.getElementById('edit-sect-err').textContent  = '';
+
+  const modal = document.getElementById('edit-modal');
+  modal.style.display = 'flex';
+  modal.addEventListener('keydown', trapFocus);
+  document.getElementById('edit-call').focus();
+}
+
+function closeModal() {
+  const modal = document.getElementById('edit-modal');
+  modal.style.display = 'none';
+  modal.removeEventListener('keydown', trapFocus);
+  if (modalTrigger) { modalTrigger.focus(); modalTrigger = null; }
+}
+
+function trapFocus(e) {
+  if (e.key === 'Escape') { closeModal(); return; }
+  if (e.key !== 'Tab') return;
+  const modal = document.getElementById('edit-modal');
+  const focusable = Array.from(modal.querySelectorAll(
+    'button:not([disabled]), input:not([disabled]), select:not([disabled]), ' +
+    '[tabindex]:not([tabindex="-1"])'
+  ));
+  const first = focusable[0];
+  const last  = focusable[focusable.length - 1];
+  if (e.shiftKey && document.activeElement === first) {
+    e.preventDefault(); last.focus();
+  } else if (!e.shiftKey && document.activeElement === last) {
+    e.preventDefault(); first.focus();
+  }
+}
+
+async function saveEdit() {
+  const id       = document.getElementById('edit-id').value;
+  const call     = document.getElementById('edit-call').value.trim().toUpperCase();
+  const band     = document.getElementById('edit-band').value;
+  const mode     = document.getElementById('edit-mode').value;
+  const cls      = document.getElementById('edit-cls').value.trim().toUpperCase();
+  const section  = document.getElementById('edit-section').value.trim().toUpperCase();
+  const operator = document.getElementById('edit-operator').value.trim().toUpperCase();
+
+  const clsOk  = validateCls(cls, 'edit-cls-err', 'edit-cls');
+  const sectOk = validateSect(section, 'edit-sect-err', 'edit-section');
+  if (!clsOk || !sectOk) return;
+
+  let result;
+  try {
+    const resp = await fetch('/api/contacts/' + id, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ call, band, mode, class: cls, section, operator })
+    });
+    result = await resp.json();
+  } catch (err) { alert('Network error: ' + err); return; }
+
+  if (result.success) {
+    const tr = document.getElementById('contact-' + id);
+    if (tr) {
+      tr.dataset.call     = call;
+      tr.dataset.band     = band;
+      tr.dataset.mode     = mode;
+      tr.dataset.cls      = cls;
+      tr.dataset.section  = section;
+      tr.dataset.operator = operator;
+      const cells = tr.querySelectorAll('td');
+      cells[3].textContent = call;
+      cells[4].textContent = band;
+      cells[5].textContent = mode;
+      cells[6].textContent = cls;
+      cells[7].textContent = section;
+      cells[8].textContent = operator;
+      // Update button aria-labels with new callsign
+      const btns = tr.querySelectorAll('button');
+      btns[0].setAttribute('aria-label', 'Edit contact ' + call);
+      btns[1].setAttribute('aria-label', 'Delete contact ' + call);
+      refreshSections();
+    }
+    closeModal();
+    announce('Contact ' + call + ' updated', false);
+    showStatus('✓ Updated ' + call, 'success');
+  } else {
+    announce('Update failed: ' + (result.error || 'unknown error'), true);
+    alert(result.error || 'Update failed');
+  }
+}
+
+// ── ADIF import ───────────────────────────────────────────────
+async function handleAdifImport(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';   // reset so the same file can be re-selected
+
+  const label = document.querySelector('label[for="adif-file-input"]');
+  label.textContent = '⏳ Importing…';
+
+  const reader = new FileReader();
+  reader.onload = async function (e) {
+    try {
+      const resp = await fetch('/import/adif', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+        body: e.target.result,
+      });
+      const result = await resp.json();
+      if (result.success) {
+        const d = result.data;
+        const msg = 'Import complete: ' + d.imported + ' added, ' +
+                    d.skipped_dupe + ' dupes skipped, ' +
+                    d.skipped_invalid + ' invalid skipped ' +
+                    '(of ' + d.total + ' records)';
+        announce(msg, false);
+        showStatus(msg, 'success');
+        setTimeout(function () { location.reload(); }, 2000);
+      } else {
+        const msg = 'Import failed: ' + (result.error || 'unknown error');
+        announce(msg, true);
+        showStatus(msg, 'error');
+      }
+    } catch (err) {
+      showStatus('Import error: ' + err, 'error');
+    } finally {
+      label.textContent = '⬆ Import ADIF';
+    }
+  };
+  reader.readAsText(file);
+}
+
+// ── Visual status (sighted users) ─────────────────────────────
+let statusTimer;
+function showStatus(msg, type) {
+  const el = document.getElementById('log-status');
+  el.textContent = msg;
+  el.className = type;
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(function () {
+    el.textContent = ''; el.className = '';
+  }, 4000);
+}
+</script>
+
+</body>
+</html>
