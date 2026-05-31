@@ -23,7 +23,6 @@ Multiple operators can log contacts simultaneously from any browser on the local
 - **Fast contact entry** — Tab cycles through Call / Class / Section; Enter submits
 - **Duplicate checking** — warns on (call, band, mode) duplicates per Field Day scoring rules
 - **ARRL / RAC sections grid** — all sections shown with worked / unworked status, tooltips, live count
-- **N1MM+ integration** — receives UDP contact messages from N1MM+ on port 12060 (receive only; see N1MM+ notes below)
 - **ADIF import / export** — import existing logs; export for submission or third-party software
 - **Accessibility** — ARIA landmarks, live regions, focus management, screen-reader announcements
 - **Keyboard shortcuts**
@@ -35,6 +34,22 @@ Multiple operators can log contacts simultaneously from any browser on the local
   - `Esc` — clear the log entry form (fast-entry mode)
 - **Dark / light theme** — toggle in the header; preference saved across sessions
 - **Single binary** — SQLite is bundled; copy the binary and `templates/` directory to deploy
+
+## External Integration
+
+FD Logger stores all contacts in a plain SQLite database file (`fd_logger.db`). Integration
+with external ham radio logging software is handled by separate bridge programs that read
+and write this database directly. This keeps fd_logger simple and makes it straightforward
+to add support for new programs without modifying the logger itself.
+
+Planned bridges:
+
+| Bridge | Status | Description |
+|--------|--------|-------------|
+| `n1mm_bridge` | In development | Two-way sync with N1MM+ via UDP (port 12060) and the N1MM peer protocol (port 12070) |
+
+Bridge programs run alongside fd_logger as separate processes. The SQLite database uses
+WAL mode so both processes can access it safely at the same time.
 
 ## Requirements
 
@@ -63,22 +78,6 @@ local network and navigate to `http://<host-ip>:8000`.
 
 On first launch you will be prompted to enter your station callsign, Field Day class,
 and section. This information is stored in the database and included in all exported logs.
-
-### N1MM+ integration
-
-FD Logger listens on UDP port 12060 for N1MM+ contact broadcasts and automatically
-adds incoming contacts (`contactinfo`), updates (`contactreplace`), and deletions
-(`contactdelete`) to the local log. Duplicate contacts (same call, band, and mode)
-are silently skipped.
-
-**Receive only:** FD Logger does not send contacts back to N1MM+. N1MM+ uses
-Windows NetBIOS peer discovery to form its logging network and only accepts UDP
-contact messages from registered network members. Since FD Logger runs on Linux
-without a NetBIOS presence, outbound packets are dropped by N1MM+. If the N1MM+
-developers provide a supported integration path this may be added in a future
-release.
-
-**Firewall:** ensure UDP port 12060 is open inbound on the machine running FD Logger.
 
 ## Deployment
 

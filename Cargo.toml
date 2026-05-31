@@ -3,7 +3,7 @@ name = "fd_logger"
 version = "0.1.0"
 edition = "2021"
 license = "GPL-3.0-only"
-description = "Web-based ARRL Field Day contact logger with N1MM+ integration"
+description = "Web-based ARRL Field Day contact logger"
 repository = "https://github.com/kb3gtn/FD_LOGGER"
 
 [[bin]]
@@ -17,7 +17,6 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
-socket2 = "0.5"
 
 [profile.release]
 opt-level = 3

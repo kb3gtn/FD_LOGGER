@@ -1,25 +1,34 @@
 #[macro_use]
 extern crate rocket;
 
-use rocket::fairing::{Fairing, Info, Kind};
 use rocket::data::{Data, ToByteUnit};
 use rocket::form::Form;
 use rocket::http::{ContentType, Header};
 use rocket::response::{Redirect, Response, Responder};
 use rocket::serde::json::Json;
-use rocket::{Orbit, Request, Rocket, State};
+use rocket::{Request, State};
 use rocket_dyn_templates::{context, Template};
 use rusqlite::Connection;
 use std::io::Cursor;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 mod adif;
 mod db;
 mod models;
-mod n1mm;
 mod sections;
 
 use models::{ApiResponse, Contact, NewContact, SiteConfig};
+
+// ── Contact ID generator ──────────────────────────────────────────────────────
+
+static ID_SEQ: AtomicU64 = AtomicU64::new(0);
+
+fn new_id() -> String {
+    let secs = chrono::Utc::now().timestamp() as u64;
+    let seq  = ID_SEQ.fetch_add(1, Ordering::Relaxed);
+    format!("{:016x}{:016x}", secs, seq)
+}
 
 // ── Application state ────────────────────────────────────────────────────────
 
@@ -39,23 +48,6 @@ impl<'r, 'o: 'r> Responder<'r, 'o> for AdifDownload {
             ))
             .sized_body(self.0.len(), Cursor::new(self.0))
             .ok()
-    }
-}
-
-// ── N1MM background listener fairing ────────────────────────────────────────
-
-struct N1mmFairing {
-    db_path: String,
-}
-
-#[rocket::async_trait]
-impl Fairing for N1mmFairing {
-    fn info(&self) -> Info {
-        Info { name: "N1MM UDP Listener", kind: Kind::Liftoff }
-    }
-    async fn on_liftoff(&self, _rocket: &Rocket<Orbit>) {
-        let db_path = self.db_path.clone();
-        rocket::tokio::spawn(n1mm::run_listener(db_path, n1mm::PORT));
     }
 }
 
@@ -181,7 +173,7 @@ fn api_add_contact(
     if let Err(e) = validate_contact(&body) {
         return Json(ApiResponse::err(e));
     }
-    let id = n1mm::new_id();
+    let id = new_id();
     let conn = db.0.lock().unwrap();
     match db::add_contact(&conn, &body, Some(&id)) {
         Ok(c)  => Json(ApiResponse::ok(c)),
@@ -279,7 +271,7 @@ async fn import_adif(
             skipped_dupe += 1;
             continue;
         }
-        let id      = n1mm::new_id();
+        let id      = new_id();
         let contact = NewContact {
             call:     e.call.clone(),
             band:     e.band.clone(),
@@ -356,7 +348,6 @@ fn rocket() -> _ {
         .unwrap_or_else(|e| panic!("Failed to initialize database: {}", e));
 
     println!("FD Logger starting on http://0.0.0.0:8000");
-    println!("N1MM listener active on UDP :{}", n1mm::PORT);
 
     rocket::build()
         .manage(DbState(Mutex::new(conn)))
@@ -378,5 +369,4 @@ fn rocket() -> _ {
             ],
         )
         .attach(Template::fairing())
-        .attach(N1mmFairing { db_path: db_path.to_string() })
 }

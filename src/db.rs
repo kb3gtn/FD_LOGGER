@@ -240,37 +240,3 @@ pub fn get_worked_sections(conn: &Connection) -> Result<Vec<String>> {
         .collect::<Result<Vec<_>>>()?;
     Ok(sections)
 }
-
-// Used by the N1MM listener to avoid inserting duplicate contacts.
-pub fn n1mm_id_exists(conn: &Connection, n1mm_id: &str) -> bool {
-    conn.query_row(
-        "SELECT COUNT(*) FROM contacts WHERE n1mm_id = ?1",
-        params![n1mm_id],
-        |row| row.get::<_, i64>(0),
-    )
-    .unwrap_or(0)
-        > 0
-}
-
-pub fn update_by_n1mm_id(conn: &Connection, n1mm_id: &str, contact: &NewContact) -> Result<bool> {
-    let call     = contact.call.trim().to_uppercase();
-    let class    = contact.class.trim().to_uppercase();
-    let section  = contact.section.trim().to_uppercase();
-    let operator = contact.operator.trim().to_uppercase();
-
-    let rows = conn.execute(
-        "UPDATE contacts
-         SET call=?1, band=?2, mode=?3, class=?4, section=?5, operator=?6
-         WHERE n1mm_id=?7",
-        params![call, contact.band, contact.mode, class, section, operator, n1mm_id],
-    )?;
-    Ok(rows > 0)
-}
-
-pub fn delete_by_n1mm_id(conn: &Connection, n1mm_id: &str) -> Result<bool> {
-    let rows = conn.execute(
-        "DELETE FROM contacts WHERE n1mm_id = ?1",
-        params![n1mm_id],
-    )?;
-    Ok(rows > 0)
-}
