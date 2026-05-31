@@ -42,14 +42,35 @@ with external ham radio logging software is handled by separate bridge programs 
 and write this database directly. This keeps fd_logger simple and makes it straightforward
 to add support for new programs without modifying the logger itself.
 
-Planned bridges:
+Bridge programs run alongside fd_logger as separate processes. The SQLite database uses
+WAL mode so both processes can access it safely at the same time.
+
+### Available bridges
 
 | Bridge | Status | Description |
 |--------|--------|-------------|
-| `n1mm_bridge` | In development | Two-way sync with N1MM+ via UDP (port 12060) and the N1MM peer protocol (port 12070) |
+| [`n1mm_bridge`](https://github.com/kb3gtn/N1MM_BRIDGE) | Working | Full two-way sync with N1MM+ via TCP (port 12070) and UDP XML (port 12060) |
 
-Bridge programs run alongside fd_logger as separate processes. The SQLite database uses
-WAL mode so both processes can access it safely at the same time.
+### n1mm_bridge
+
+[`n1mm_bridge`](https://github.com/kb3gtn/N1MM_BRIDGE) provides full bidirectional
+contact synchronisation with N1MM+ stations on the local network:
+
+- Contacts logged in **N1MM+** appear immediately in the FD Logger web UI
+- Contacts logged in **FD Logger** are sent to all connected N1MM+ stations within one second
+- N1MM+ shows FD Logger as a healthy peer (Send OK / Receive OK) in its network status
+
+Run it from the same directory as `fd_logger.db`:
+
+```bash
+./n1mm_bridge \
+  --callsign KB3GTN \
+  --station WA3NAN-REMOTE \
+  --local-ip 192.168.1.17
+```
+
+See the [N1MM Bridge repository](https://github.com/kb3gtn/N1MM_BRIDGE) for full
+build instructions, all options, and protocol details.
 
 ## Requirements
 
