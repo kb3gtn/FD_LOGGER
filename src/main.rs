@@ -10,7 +10,6 @@ use rocket::{Request, State};
 use rocket_dyn_templates::{context, Template};
 use rusqlite::Connection;
 use std::io::Cursor;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 mod adif;
@@ -19,16 +18,6 @@ mod models;
 mod sections;
 
 use models::{ApiResponse, Contact, NewContact, SiteConfig};
-
-// ── Contact ID generator ──────────────────────────────────────────────────────
-
-static ID_SEQ: AtomicU64 = AtomicU64::new(0);
-
-fn new_id() -> String {
-    let secs = chrono::Utc::now().timestamp() as u64;
-    let seq  = ID_SEQ.fetch_add(1, Ordering::Relaxed);
-    format!("{:016x}{:016x}", secs, seq)
-}
 
 // ── Application state ────────────────────────────────────────────────────────
 
@@ -173,9 +162,8 @@ fn api_add_contact(
     if let Err(e) = validate_contact(&body) {
         return Json(ApiResponse::err(e));
     }
-    let id = new_id();
     let conn = db.0.lock().unwrap();
-    match db::add_contact(&conn, &body, Some(&id)) {
+    match db::add_contact(&conn, &body, None) {
         Ok(c)  => Json(ApiResponse::ok(c)),
         Err(e) => Json(ApiResponse::err(e.to_string())),
     }
@@ -271,7 +259,6 @@ async fn import_adif(
             skipped_dupe += 1;
             continue;
         }
-        let id      = new_id();
         let contact = NewContact {
             call:     e.call.clone(),
             band:     e.band.clone(),
@@ -280,7 +267,7 @@ async fn import_adif(
             section:  e.section.clone(),
             operator: e.operator.clone(),
         };
-        match db::add_contact_with_time(&conn, &contact, &e.date, &e.time, Some(&id)) {
+        match db::add_contact_with_time(&conn, &contact, &e.date, &e.time, None) {
             Ok(_)  => imported += 1,
             Err(_) => skipped_invalid += 1,
         }
