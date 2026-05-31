@@ -5,7 +5,8 @@ use crate::models::{Contact, NewContact, SiteConfig};
 
 pub fn init_db(conn: &Connection) -> Result<()> {
     conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS site_config (
+        "PRAGMA journal_mode=WAL;
+        CREATE TABLE IF NOT EXISTS site_config (
             id       INTEGER PRIMARY KEY,
             callsign TEXT NOT NULL,
             class    TEXT NOT NULL,
